@@ -1,0 +1,43 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      production-dependencies:
+        dependency-type: production
+      development-dependencies:
+        dependency-type: development
+    ignore:
+      - dependency-name: react
+        update-types: ['major']
+      - dependency-name: react-dom
+        update-types: ['major']
+      - dependency-name: react-force-graph-2d
+        update-types: ['major']
+      - dependency-name: react-force-graph-3d
+        update-types: ['major']
+      - dependency-name: three
+        update-types: ['major']
+
+  - package-ecosystem: npm
+    directory: /bridge
+    schedule:
+      interval: weekly
+    groups:
+      production-dependencies:
+        dependency-type: production
+      development-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: pip
+    directory: /servers/markitdown-mcp
+    schedule:
+      interval: weekly
+    groups:
+      python-dependencies:
+        dependency-type: production
+    ignore:
+      - dependency-name: markitdown
+        update-types: ['major']

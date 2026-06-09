@@ -1,0 +1,76 @@
+name: Vault Help
+description: 'Having trouble with wiki links, tags, tasks, agent detection, or the knowledge graph? Ask here before opening a bug.'
+title: '[Help] '
+labels: ['help-wanted']
+assignees: []
+projects: []
+milestone: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For wiki link resolution issues, broken link detection, tag extraction, task collection, or agent profile detection, please check the troubleshooting section of the README first. If that doesn't resolve it, use this template.
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Wiki links / backlinks
+        - Broken link detection
+        - Tags (frontmatter or inline)
+        - Tasks (GitHub-flavored checkboxes)
+        - Agent detection
+        - 3D knowledge graph
+        - LM Studio chat
+        - MCP tools / bridge
+        - MarkItDown import
+        - File System Access API (folder read/write)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the issue in detail.
+      placeholder: |
+        What I expected: [[Note Name]] should resolve to [target note]
+        What happened instead: it shows as a broken link / doesn't appear in backlinks / is missing from the graph
+
+        My note content (relevant section only):
+        ```markdown
+        <!-- paste the relevant markdown block here, not the whole file -->
+        ```
+    validations:
+      required: true
+
+  - type: input
+    id: target-note
+    attributes:
+      label: Target note name (for wiki link issues)
+      description: 'The note name inside the [[brackets]] that is not resolving.'
+      placeholder: 'Note Name'
+
+  - type: textarea
+    id: vault-structure
+    attributes:
+      label: Vault structure (optional)
+      description: Describe the relevant parts of your vault layout. Do NOT paste full note contents.
+      placeholder: |
+        My Vault/
+          Projects/
+            Launch Plan.md    ← this note has [[Note Name]] in it
+          Notes/
+            Note Name.md      ← this note should be the target
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Things already checked
+      options:
+        - label: Read the Troubleshooting section in the README
+        - label: The target note exists and is a .md file
+        - label: The note is not in a hidden or ignored folder (.git, node_modules, etc.)
+        - label: I've tried path-qualified links like [[Projects/Note Name]]

@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+bridge/dist/
+
+# Lockfiles
+package-lock.json
+bridge/package-lock.json
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Coverage
+coverage/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+servers/**/.venv/
+servers/**/__pycache__/
+
+# IDE
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Temporary
+*.tmp
+*.temp
+
+# Git
+.git/
