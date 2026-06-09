@@ -1,0 +1,19 @@
+<svg width="1440" height="12" viewBox="0 0 1440 12" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Agent Vault supergraphic">
+  <path d="M0 6C140 6 140 1 280 1C420 1 420 11 560 11C700 11 700 2 840 2C980 2 980 10 1120 10C1260 10 1260 6 1440 6" stroke="url(#paint0_linear)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M0 9C180 9 180 4 360 4C540 4 540 8 720 8C900 8 900 3 1080 3C1260 3 1260 7 1440 7" stroke="url(#paint1_linear)" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+  <defs>
+    <linearGradient id="paint0_linear" x1="0" y1="6" x2="1440" y2="6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="0.25" stop-color="#6366F1"/>
+      <stop offset="0.5" stop-color="#A855F7"/>
+      <stop offset="0.75" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="paint1_linear" x1="0" y1="6" x2="1440" y2="6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F59E0B"/>
+      <stop offset="0.4" stop-color="#22C55E"/>
+      <stop offset="0.7" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+</svg>

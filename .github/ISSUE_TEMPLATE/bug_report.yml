@@ -1,0 +1,109 @@
+name: Bug Report
+description: Report something that is broken or not working as expected
+title: '[Bug] '
+labels: ['bug']
+assignees: []
+projects: []
+milestone: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report. Please include as much detail as possible so we can reproduce the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? A clear and concise description of the bug.
+      placeholder: |
+        Steps to reproduce:
+        1. Open Agent Vault
+        2. Open vault at '...'
+        3. Click on '...'
+        4. See error / unexpected behavior
+
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      description: Which browser were you using?
+      options:
+        - Google Chrome
+        - Microsoft Edge
+        - Firefox (read-only mode)
+        - Safari (read-only mode)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: vault-size
+    attributes:
+      label: Vault size (approximate number of notes)
+      description: 'e.g. ~50 notes, ~500 notes'
+      placeholder: '~50 notes'
+
+  - type: textarea
+    id: vault-structure
+    attributes:
+      label: Vault structure (optional)
+      description: |
+        Describe the vault layout if relevant to the bug (e.g. top-level folders, special naming conventions).
+        Do NOT paste your actual note contents.
+      placeholder: |
+        My Vault/
+          Projects/
+          Agents/
+            Profiles/
+            Skills/
+          Knowledge/
+
+  - type: textarea
+    id: console-errors
+    attributes:
+      label: Console errors
+      description: |
+        Open the browser DevTools (F12), go to the Console tab, and paste any red error messages here.
+        Leave blank if there are no console errors.
+      placeholder: |
+        Error: ...
+        at ... (file:line)
+
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permissions tried
+      options:
+        - label: 'Granted read/write folder access'
+        - label: 'Granted read-only folder access'
+        - label: 'No folder access granted (read-only mode)'
+
+  - type: textarea
+    id: repro-alt
+    attributes:
+      label: Anything else that might be relevant
+      description: OS language, any browser extensions, whether the issue happens consistently or intermittently.
+      placeholder: '...'
+
+  - type: input
+    id: version
+    attributes:
+      label: Agent Vault version
+      description: Found in the Settings view or in the About page.
+      placeholder: '1.0.0'
