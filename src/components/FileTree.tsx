@@ -472,23 +472,25 @@ export function FileTree({
     });
   };
 
-  const expandAllFolders = useCallback(() => {
-    setCollapsed((prev) => (prev.size === 0 ? prev : new Set()));
-  }, []);
-
-  const collapseAllFolders = useCallback(() => {
-    const allPaths: string[] = [];
-    const collect = (nodes: TreeNode[]) => {
-      for (const n of nodes) {
-        if (n.children.length > 0 || n.folderNote) {
-          allPaths.push(n.path);
-          collect(n.children);
+  const toggleAllFolders = useCallback(() => {
+    if (collapsed.size === 0) {
+      // All expanded → collapse all
+      const allPaths: string[] = [];
+      const collect = (nodes: TreeNode[]) => {
+        for (const n of nodes) {
+          if (n.children.length > 0 || n.folderNote) {
+            allPaths.push(n.path);
+            collect(n.children);
+          }
         }
-      }
-    };
-    collect(tree);
-    setCollapsed(new Set(allPaths));
-  }, [tree]);
+      };
+      collect(tree);
+      setCollapsed(new Set(allPaths));
+    } else {
+      // Some or all collapsed → expand all
+      setCollapsed(new Set());
+    }
+  }, [collapsed.size, tree]);
 
   const handleHoverStart = useCallback((note: VaultNote, element: HTMLElement) => {
     if (hideTimeoutRef.current) {
@@ -679,19 +681,11 @@ export function FileTree({
         <span>{search.trim() ? `${filteredNotes.length}/${notes.length}` : notes.length}</span>
         <button
           className="icon-btn"
-          onClick={expandAllFolders}
-          title="Expand all folders"
-          aria-label="Expand all folders"
+          onClick={toggleAllFolders}
+          title={collapsed.size === 0 ? 'Collapse all folders' : 'Expand all folders'}
+          aria-label={collapsed.size === 0 ? 'Collapse all folders' : 'Expand all folders'}
         >
-          <ChevronsDownUp size={11} />
-        </button>
-        <button
-          className="icon-btn"
-          onClick={collapseAllFolders}
-          title="Collapse all folders"
-          aria-label="Collapse all folders"
-        >
-          <ChevronsUpDown size={11} />
+          {collapsed.size === 0 ? <ChevronsUpDown size={11} /> : <ChevronsDownUp size={11} />}
         </button>
       </div>
 
