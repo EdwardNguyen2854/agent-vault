@@ -424,11 +424,15 @@ export function FileTree({
     }
     return clampFileTreeWidth(FILE_TREE_DEFAULT);
   });
+  const [extFilter, setExtFilter] = useState<string | null>(null);
   const dragging = useRef(false);
   const previewTimeoutRef = useRef<number | null>(null);
   const hideTimeoutRef = useRef<number | null>(null);
 
-  const filteredNotes = search.trim() ? searchNotes(notes, search).map((r) => r.note) : notes;
+  const filteredByExt = extFilter ? notes.filter((n) => n.extension === extFilter) : notes;
+  const filteredNotes = search.trim()
+    ? searchNotes(filteredByExt, search).map((r) => r.note)
+    : filteredByExt;
 
   const tree = sortTree(buildTree(filteredNotes, folders));
 
@@ -705,6 +709,23 @@ export function FileTree({
             aria-label="Clear note filter"
           >
             <X size={11} />
+          </button>
+        )}
+      </div>
+
+      <div className="file-tree-ext-filter">
+        {(['md', 'txt', 'json', 'yaml', 'csv'] as const).map((ext) => (
+          <button
+            key={ext}
+            className={`ghost-button${extFilter === ext ? ' active' : ''}`}
+            onClick={() => setExtFilter(extFilter === ext ? null : ext)}
+          >
+            .{ext}
+          </button>
+        ))}
+        {extFilter && (
+          <button className="ghost-button" onClick={() => setExtFilter(null)}>
+            Clear
           </button>
         )}
       </div>
