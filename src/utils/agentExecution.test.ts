@@ -6,6 +6,91 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatMessage } from '../types';
 import { createFakeAdapter, type FakeAdapterOptions } from './modelAdapter';
 import { runSimpleChat, runAgentChat } from './agentExecution';
+import type { ApprovalAdapter, ApprovalDecision, ApprovalRequest, ApprovalResult } from './approvalAdapter';
+
+/**
+ * Create a fake approval adapter for testing.
+ */
+function createFakeApprovalAdapter(options: {
+  /** Return this decision for all requests */
+  defaultDecision?: ApprovalDecision;
+  /** Track all approval requests */
+  requests?: ApprovalRequest[];
+  /** Resolve pending approval */
+  resolveDecision?: (decision: ApprovalDecision) => void;
+  /** Always-allowed tools */
+  alwaysAllowed?: Set<string>;
+} = {}): ApprovalAdapter & {
+  getRequests: () => ApprovalRequest[];
+  setDecision: (decision: ApprovalDecision) => void;
+  reset: () => void;
+} {
+  const requests: ApprovalRequest[] = [];
+  let currentResolve: ((result: ApprovalResult) => void) | null = null;
+  const alwaysAllowed = options.alwaysAllowed ?? new Set<string>();
+  // Default to 'deny' if not specified
+  let defaultDecision: ApprovalDecision = options.defaultDecision ?? 'deny';
+
+  return {
+    async requestApproval(request: ApprovalRequest): Promise<ApprovalResult> {
+      requests.push(request);
+
+      // Check always-allowed first
+      if (alwaysAllowed.has(request.toolId)) {
+        return {
+          decision: 'always_allow',
+          reason: 'Always allowed',
+          timestamp: Date.now(),
+        };
+      }
+
+      // If we have a synchronous decision set, return it
+      if (defaultDecision !== undefined) {
+        return {
+          decision: defaultDecision,
+          reason: `Fake decision: ${defaultDecision}`,
+          timestamp: Date.now(),
+        };
+      }
+
+      // Otherwise, return a promise that can be resolved externally
+      return new Promise<ApprovalResult>((resolve) => {
+        currentResolve = resolve;
+        options.resolveDecision?.(defaultDecision ?? 'deny');
+      });
+    },
+
+    isAlwaysAllowed(toolId: string): boolean {
+      return alwaysAllowed.has(toolId);
+    },
+
+    setAlwaysAllowed(toolId: string): void {
+      alwaysAllowed.add(toolId);
+    },
+
+    clearAlwaysAllowed(toolId: string): void {
+      alwaysAllowed.delete(toolId);
+    },
+
+    getRequests: () => [...requests],
+    setDecision: (decision: ApprovalDecision) => {
+      defaultDecision = decision;
+      if (currentResolve) {
+        currentResolve({
+          decision,
+          reason: `Fake decision: ${decision}`,
+          timestamp: Date.now(),
+        });
+        currentResolve = null;
+      }
+    },
+    reset: () => {
+      requests.length = 0;
+      currentResolve = null;
+      defaultDecision = options.defaultDecision ?? 'deny';
+    },
+  };
+}
 
 describe('modelAdapter', () => {
   describe('createFakeAdapter', () => {
@@ -845,5 +930,307 @@ describe('toolAdapter', () => {
     expect(mcpToolAdapter.isAvailable('mcp::server::tool')).toBe(true);
     expect(mcpToolAdapter.isAvailable('internal::tool')).toBe(false);
     expect(mcpToolAdapter.isAvailable('vault.list_notes')).toBe(false);
+  });
+});
+
+describe('createFakeApprovalAdapter', () => {
+  it('should return deny by default when no handler is available', async () => {
+    const adapter = createFakeApprovalAdapter();
+
+    const result = await adapter.requestApproval({
+      toolId: 'test.tool',
+      toolName: 'Test Tool',
+      input: { key: 'value' },
+      timestamp: Date.now(),
+    });
+
+    expect(result.decision).toBe('deny');
+  });
+
+  it('should return always_allow for always-allowed tools', async () => {
+    const alwaysAllowed = new Set<string>(['always.tool']);
+    const adapter = createFakeApprovalAdapter({ alwaysAllowed });
+
+    const result = await adapter.requestApproval({
+      toolId: 'always.tool',
+      toolName: 'Always Tool',
+      input: {},
+      timestamp: Date.now(),
+    });
+
+    expect(result.decision).toBe('always_allow');
+    expect(adapter.isAlwaysAllowed('always.tool')).toBe(true);
+  });
+
+  it('should track all approval requests', async () => {
+    const adapter = createFakeApprovalAdapter({ defaultDecision: 'allow_once' });
+
+    await adapter.requestApproval({
+      toolId: 'tool1',
+      toolName: 'Tool 1',
+      input: { a: 1 },
+      timestamp: Date.now(),
+    });
+
+    await adapter.requestApproval({
+      toolId: 'tool2',
+      toolName: 'Tool 2',
+      input: { b: 2 },
+      timestamp: Date.now(),
+    });
+
+    const requests = adapter.getRequests();
+    expect(requests).toHaveLength(2);
+    expect(requests[0].toolId).toBe('tool1');
+    expect(requests[1].toolId).toBe('tool2');
+  });
+
+  it('should support setting always allowed via setAlwaysAllowed', async () => {
+    const adapter = createFakeApprovalAdapter();
+
+    adapter.setAlwaysAllowed('new.always.tool');
+
+    expect(adapter.isAlwaysAllowed('new.always.tool')).toBe(true);
+
+    const result = await adapter.requestApproval({
+      toolId: 'new.always.tool',
+      toolName: 'New Always Tool',
+      input: {},
+      timestamp: Date.now(),
+    });
+
+    expect(result.decision).toBe('always_allow');
+  });
+
+  it('should support clearing always allowed', async () => {
+    const alwaysAllowed = new Set<string>(['to.clear']);
+    const adapter = createFakeApprovalAdapter({ alwaysAllowed });
+
+    expect(adapter.isAlwaysAllowed('to.clear')).toBe(true);
+
+    adapter.clearAlwaysAllowed('to.clear');
+
+    expect(adapter.isAlwaysAllowed('to.clear')).toBe(false);
+  });
+
+  it('should reset state correctly', async () => {
+    const adapter = createFakeApprovalAdapter({ defaultDecision: 'allow_once' });
+
+    await adapter.requestApproval({
+      toolId: 'tool1',
+      toolName: 'Tool 1',
+      input: {},
+      timestamp: Date.now(),
+    });
+
+    adapter.reset();
+
+    expect(adapter.getRequests()).toHaveLength(0);
+  });
+});
+
+describe('approval adapter integration in runAgentChat', () => {
+  it('should use approval adapter for ask-gated tools', async () => {
+    const events: string[] = [];
+    const toolCalls = [
+      {
+        id: 'call_approval_1',
+        type: 'function' as const,
+        function: { name: 'note.create', arguments: '{"title": "Test"}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Creating a note.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    const fakeToolAdapter = {
+      execute: async (
+        _toolId: string,
+        _input: Record<string, unknown>,
+        _ctx: import('../types').ToolExecutionContext,
+        _signal?: AbortSignal,
+      ): Promise<import('../types').ToolInvocationResult> => {
+        return {
+          success: true,
+          output: { noteId: 'new-note' },
+          durationMs: 10,
+        };
+      },
+      isAvailable: (_toolId: string): boolean => true,
+    };
+
+    const approvalAdapter = createFakeApprovalAdapter({
+      defaultDecision: 'allow_once',
+    });
+
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Create a note', timestamp: Date.now() }],
+        prompt: 'Create a note',
+        notes: [],
+        onEvent: (event) => {
+          events.push(event.status);
+        },
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+        approvalAdapter,
+      },
+      true,
+    );
+
+    // Should have approval events
+    expect(events).toContain('awaiting_approval');
+    expect(events).toContain('approved');
+
+    // Approval should be recorded in transcript
+    expect(result.transcript.length).toBeGreaterThan(0);
+  });
+
+  it('should deny when approval adapter returns deny', async () => {
+    const toolCalls = [
+      {
+        id: 'call_deny_1',
+        type: 'function' as const,
+        function: { name: 'note.create', arguments: '{"title": "Test"}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Creating a note.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    const fakeToolAdapter = {
+      execute: async (): Promise<import('../types').ToolInvocationResult> => {
+        throw new Error('Tool should not have been called');
+      },
+      isAvailable: (): boolean => true,
+    };
+
+    const approvalAdapter = createFakeApprovalAdapter({ defaultDecision: 'deny' });
+
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Create a note', timestamp: Date.now() }],
+        prompt: 'Create a note',
+        notes: [],
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+        approvalAdapter,
+      },
+      true,
+    );
+
+    // Tool should be denied
+    expect(result.transcript.length).toBeGreaterThan(0);
+    const record = result.transcript[0];
+    expect(record.decision).toBe('deny');
+  });
+
+  it('should persist always_allow decisions', async () => {
+    const toolCalls = [
+      {
+        id: 'call_persist_1',
+        type: 'function' as const,
+        function: { name: 'note.create', arguments: '{"title": "Test"}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Creating a note.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    const fakeToolAdapter = {
+      execute: async (): Promise<import('../types').ToolInvocationResult> => ({
+        success: true,
+        output: { noteId: 'new-note' },
+        durationMs: 10,
+      }),
+      isAvailable: (): boolean => true,
+    };
+
+    const approvalAdapter = createFakeApprovalAdapter({ defaultDecision: 'always_allow' });
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Create a note', timestamp: Date.now() }],
+        prompt: 'Create a note',
+        notes: [],
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+        approvalAdapter,
+      },
+      true,
+    );
+
+    // Should be marked as always allowed
+    expect(approvalAdapter.isAlwaysAllowed('note.create')).toBe(true);
+  });
+
+  it('should handle allow_session decisions', async () => {
+    // Track call count to detect multiple model calls
+    let modelCallCount = 0;
+    const toolCalls = [
+      {
+        id: 'call_session_1',
+        type: 'function' as const,
+        function: { name: 'note.create', arguments: '{"title": "Test"}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Creating a note.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    let executeCount = 0;
+    const fakeToolAdapter = {
+      execute: async (): Promise<import('../types').ToolInvocationResult> => {
+        executeCount++;
+        return {
+          success: true,
+          output: { noteId: 'new-note' },
+          durationMs: 10,
+        };
+      },
+      isAvailable: (): boolean => true,
+    };
+
+    const approvalAdapter = createFakeApprovalAdapter({ defaultDecision: 'allow_session' });
+    const sessionApproved = new Set<string>();
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Create a note', timestamp: Date.now() }],
+        prompt: 'Create a note',
+        notes: [],
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+        approvalAdapter,
+        sessionApprovedTools: sessionApproved,
+        maxIterations: 1, // Limit to 1 iteration since fake adapter returns same tool calls
+      },
+      true,
+    );
+
+    // Tool should execute once (with maxIterations=1)
+    expect(executeCount).toBe(1);
+    // Session approved should contain the tool
+    expect(sessionApproved.has('note.create')).toBe(true);
   });
 });

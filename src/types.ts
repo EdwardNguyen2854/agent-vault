@@ -539,14 +539,16 @@ export interface ToolCallRecord {
   decisionReason?: string;
   durationMs: number;
   startedAt: number;
+  approval?: AgentRunApproval;
 }
 
 export type ToolLoopEventStatus =
   | 'requested'
   | 'awaiting_approval'
+  | 'approved'
+  | 'denied'
   | 'running'
   | 'succeeded'
-  | 'denied'
   | 'failed';
 
 export interface ToolLoopEvent {

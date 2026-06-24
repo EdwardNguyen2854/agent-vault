@@ -41,6 +41,8 @@ import {
   mcpToolAdapter,
   getToolAdapter,
 } from './toolAdapter';
+import type { ApprovalAdapter } from './approvalAdapter';
+import { type ApprovalDecision } from './approvalAdapter';
 
 // ============================================================================
 // Types & Interfaces
@@ -88,6 +90,12 @@ export interface AgentExecutionOptions {
 
   /** Injectable tool adapter for testing (defaults to internalToolAdapter) */
   toolAdapter?: ToolAdapter;
+
+  /** Approval adapter for gating write-capable tools */
+  approvalAdapter?: ApprovalAdapter;
+
+  /** Tools approved for this session (used with ApprovalAdapter) */
+  sessionApprovedTools?: Set<string>;
 }
 
 export type AgentExecutionStatus =
@@ -164,10 +172,12 @@ async function executeToolCall(
     onAsk?: (tool: Tool, input: unknown) => Promise<boolean>;
     signal?: AbortSignal;
     toolAdapter?: ToolAdapter;
+    approvalAdapter?: ApprovalAdapter;
+    sessionApprovedTools?: Set<string>;
   },
   agent?: Agent,
 ): Promise<{ record: ToolCallRecord; toolResult: ToolInvocationResult; outputContent: string }> {
-  const { onEvent, onAsk, signal, toolAdapter } = options;
+  const { onEvent, onAsk, signal, toolAdapter, approvalAdapter, sessionApprovedTools } = options;
 
   // Handle invalid args
   if (!parsedArgs.ok) {
@@ -283,27 +293,176 @@ async function executeToolCall(
     };
   }
 
-  // Handle ask decision
-  if (gate.decision === 'ask' && onAsk) {
-    onEvent?.({
-      id: toolCall.id,
-      toolId: tool.id,
-      toolName: tool.name,
-      input: parsedInput,
-      status: 'awaiting_approval',
-      reason: gate.reason,
-      startedAt,
-    });
-    const approved = await onAsk(tool, parsedInput);
-    if (!approved) {
+  // Handle ask decision - use approval adapter or fall back to onAsk
+  if (gate.decision === 'ask') {
+    // Check if already approved (session or always)
+    const sessionApproved = sessionApprovedTools?.has(tool.id) ?? false;
+    const alwaysAllowed = approvalAdapter?.isAlwaysAllowed(tool.id) ?? false;
+
+    if (sessionApproved || alwaysAllowed) {
+      // Already approved for this session or always
+      const approvalDecision: ApprovalDecision = alwaysAllowed ? 'always_allow' : 'allow_session';
+      onEvent?.({
+        id: toolCall.id,
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        status: 'approved',
+        reason: gate.reason,
+        startedAt,
+        completedAt: Date.now(),
+      });
+      // Continue to tool execution
+    } else if (approvalAdapter) {
+      // Use approval adapter to request approval
+      onEvent?.({
+        id: toolCall.id,
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        status: 'awaiting_approval',
+        reason: gate.reason,
+        startedAt,
+      });
+
+      const approvalResult = await approvalAdapter.requestApproval({
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        reason: gate.reason,
+        timestamp: Date.now(),
+      });
+
+      // Emit approved or denied event
+      if (approvalResult.decision === 'deny') {
+        onEvent?.({
+          id: toolCall.id,
+          toolId: tool.id,
+          toolName: tool.name,
+          input: parsedInput,
+          error: 'User denied tool call',
+          reason: approvalResult.reason ?? 'User denied',
+          status: 'denied',
+          startedAt,
+          completedAt: Date.now(),
+        });
+        const record: ToolCallRecord = {
+          id: toolCall.id,
+          toolId: tool.id,
+          toolName: tool.name,
+          input: parsedInput,
+          error: 'User denied tool call',
+          decision: 'deny',
+          decisionReason: approvalResult.reason ?? 'User denied',
+          durationMs: 0,
+          startedAt,
+          approval: {
+            id: `approval-${toolCall.id}`,
+            toolId: tool.id,
+            toolName: tool.name,
+            input: parsedInput,
+            decision: 'deny',
+            timestamp: approvalResult.timestamp,
+            decisionReason: approvalResult.reason,
+          },
+        };
+        const toolResult: ToolInvocationResult = {
+          success: false,
+          error: 'User denied',
+          durationMs: 0,
+        };
+        return {
+          record,
+          toolResult,
+          outputContent: `Error: User denied tool "${tool.name}".`,
+        };
+      }
+
+      // Handle allow_once, allow_session, always_allow
+      if (approvalResult.decision === 'allow_session') {
+        sessionApprovedTools?.add(tool.id);
+      } else if (approvalResult.decision === 'always_allow') {
+        approvalAdapter.setAlwaysAllowed(tool.id);
+      }
+
+      onEvent?.({
+        id: toolCall.id,
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        status: 'approved',
+        reason: approvalResult.reason,
+        startedAt,
+        completedAt: Date.now(),
+      });
+    } else if (onAsk) {
+      // Fall back to onAsk callback
+      onEvent?.({
+        id: toolCall.id,
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        status: 'awaiting_approval',
+        reason: gate.reason,
+        startedAt,
+      });
+      const approved = await onAsk(tool, parsedInput);
+      if (!approved) {
+        const recordStartedAt = Date.now();
+        onEvent?.({
+          id: toolCall.id,
+          toolId: tool.id,
+          toolName: tool.name,
+          input: parsedInput,
+          error: 'User denied tool call',
+          reason: 'User denied',
+          status: 'denied',
+          startedAt: recordStartedAt,
+          completedAt: Date.now(),
+        });
+        const record: ToolCallRecord = {
+          id: toolCall.id,
+          toolId: tool.id,
+          toolName: tool.name,
+          input: parsedInput,
+          error: 'User denied tool call',
+          decision: 'deny',
+          decisionReason: 'User denied',
+          durationMs: 0,
+          startedAt: recordStartedAt,
+        };
+        const toolResult: ToolInvocationResult = {
+          success: false,
+          error: 'User denied',
+          durationMs: 0,
+        };
+        return {
+          record,
+          toolResult,
+          outputContent: `Error: User denied tool "${tool.name}".`,
+        };
+      }
+      onEvent?.({
+        id: toolCall.id,
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        status: 'approved',
+        reason: gate.reason,
+        startedAt,
+        completedAt: Date.now(),
+      });
+    } else {
+      // No approval handler available
+      const reason = 'Tool requires approval, but no approval handler is available';
       const recordStartedAt = Date.now();
       onEvent?.({
         id: toolCall.id,
         toolId: tool.id,
         toolName: tool.name,
         input: parsedInput,
-        error: 'User denied tool call',
-        reason: 'User denied',
+        error: reason,
+        reason,
         status: 'denied',
         startedAt: recordStartedAt,
         completedAt: Date.now(),
@@ -313,58 +472,23 @@ async function executeToolCall(
         toolId: tool.id,
         toolName: tool.name,
         input: parsedInput,
-        error: 'User denied tool call',
+        error: reason,
         decision: 'deny',
-        decisionReason: 'User denied',
+        decisionReason: reason,
         durationMs: 0,
         startedAt: recordStartedAt,
       };
       const toolResult: ToolInvocationResult = {
         success: false,
-        error: 'User denied',
+        error: reason,
         durationMs: 0,
       };
       return {
         record,
         toolResult,
-        outputContent: `Error: User denied tool "${tool.name}".`,
+        outputContent: `Error: Tool "${tool.name}" denied. ${reason}`,
       };
     }
-  } else if (gate.decision === 'ask') {
-    const reason = 'Tool requires approval, but no approval handler is available';
-    const recordStartedAt = Date.now();
-    onEvent?.({
-      id: toolCall.id,
-      toolId: tool.id,
-      toolName: tool.name,
-      input: parsedInput,
-      error: reason,
-      reason,
-      status: 'denied',
-      startedAt: recordStartedAt,
-      completedAt: Date.now(),
-    });
-    const record: ToolCallRecord = {
-      id: toolCall.id,
-      toolId: tool.id,
-      toolName: tool.name,
-      input: parsedInput,
-      error: reason,
-      decision: 'deny',
-      decisionReason: reason,
-      durationMs: 0,
-      startedAt: recordStartedAt,
-    };
-    const toolResult: ToolInvocationResult = {
-      success: false,
-      error: reason,
-      durationMs: 0,
-    };
-    return {
-      record,
-      toolResult,
-      outputContent: `Error: Tool "${tool.name}" denied. ${reason}`,
-    };
   }
 
   // Execute tool
@@ -456,6 +580,8 @@ export async function runAgentChat(
     maxIterations = 12,
     modelAdapter = defaultModelAdapter,
     toolAdapter,
+    approvalAdapter,
+    sessionApprovedTools: externalSessionApprovedTools,
   } = options;
 
   let lastContent = '';
@@ -463,6 +589,9 @@ export async function runAgentChat(
   let reasoning = '';
   const transcript: ToolCallRecord[] = [];
   const approvals: AgentRunApproval[] = [];
+
+  // Session-approved tools - can be passed in or created locally
+  const sessionApprovedTools = externalSessionApprovedTools ?? new Set<string>();
 
   // Build the execution context for tool calls
   const ctx: ToolExecutionContext = {
@@ -609,7 +738,7 @@ export async function runAgentChat(
             tool,
             parsedArgs,
             ctx,
-            { onEvent, onAsk, signal, toolAdapter },
+            { onEvent, onAsk, signal, toolAdapter, approvalAdapter, sessionApprovedTools },
             agent,
           );
 
