@@ -1761,6 +1761,41 @@ pre {
   overflow: auto;
 }
 
+/* ── Mermaid diagram blocks ── */
+pre code.language-mermaid {
+  display: block;
+}
+
+/* Rendered mermaid SVG should fill available space */
+pre[data-mermaid-rendered='true'] {
+  all: unset;
+  display: block;
+  overflow: visible;
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+pre[data-mermaid-rendered='true'] .mermaid-error {
+  display: block;
+  padding: var(--space-3);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+pre[data-mermaid-rendered='true'] svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 /* ============================================
    EMPTY STATE
    ============================================ */
@@ -1815,6 +1850,113 @@ pre {
 
 .empty-action {
   margin-top: var(--space-2);
+}
+
+/* ============================================
+   NOTE TABS — multi-tab bar above editor
+   ============================================ */
+.editor-view-container {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.note-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-light);
+  min-height: 30px;
+  scrollbar-width: thin;
+}
+
+.note-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--border-light);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+  min-width: 0;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.note-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.note-tab.active {
+  color: var(--text);
+  background: var(--surface);
+  border-bottom-color: var(--primary);
+}
+
+.note-tab-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.note-tab-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.note-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+  transition:
+    opacity var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.note-tab:hover .note-tab-close {
+  opacity: 1;
+}
+
+.note-tab.active .note-tab-close {
+  opacity: 0.6;
+}
+
+.note-tab-close:hover {
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
 /* ============================================

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { FolderOpen, Lock, Sparkles } from 'lucide-react';
+import { NoteTabs } from './components/NoteTabs';
 import type {
   ChatAgentBusyState,
   EditorMode,
@@ -285,6 +286,16 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [openTabs, setOpenTabs] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('openTabs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [draftsMap, setDraftsMap] = useState<Record<string, string>>({});
+  const [dirtyTabsMap, setDirtyTabsMap] = useState<Record<string, boolean>>({});
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [noteActionDialog, setNoteActionDialog] = useState<{
     mode: 'create' | 'rename' | 'delete';
@@ -706,15 +717,65 @@ export default function App() {
     return agentVaultSource.name;
   }, [selectedNote, personalVaults]);
 
+  // Track previous selectedKey for draft save/load on tab switches
+  const prevKeyRef = useRef<string | undefined>(undefined);
+  const draftRef = useRef(draft);
+  const dirtyRef = useRef(dirty);
+  const openTabsRef = useRef(openTabs);
+  const closeTabRef = useRef<(key: string) => void>(() => {});
+  // Keep refs in sync for use in effects
+  draftRef.current = draft;
+  dirtyRef.current = dirty;
+  openTabsRef.current = openTabs;
+
   useEffect(() => {
+    // Save current draft for the previous tab before it changes
+    const prev = prevKeyRef.current;
+    if (prev !== undefined && prev !== selectedKey) {
+      setDraftsMap((current) => ({ ...current, [prev]: draftRef.current }));
+      setDirtyTabsMap((current) => ({ ...current, [prev]: dirtyRef.current }));
+    }
+
+    // Load draft for the newly selected tab
     if (!selectedNote) {
       setDraft('');
       setDirty(false);
-      return;
+    } else {
+      const key = getNoteKey(selectedNote);
+      // Use functional updater to read latest draftsMap
+      setDraftsMap((current) => {
+        const saved = current[key];
+        if (saved !== undefined) {
+          // Need to also read dirtyTabsMap — use another functional setter
+          setDirtyTabsMap((dirtyCurrent) => {
+            setDraft(saved);
+            const isDirty = dirtyCurrent[key] ?? false;
+            setDirty(isDirty);
+            draftRef.current = saved;
+            dirtyRef.current = isDirty;
+            return dirtyCurrent;
+          });
+        } else {
+          setDraft(selectedNote.content);
+          setDirty(false);
+          draftRef.current = selectedNote.content;
+          dirtyRef.current = false;
+        }
+        return current;
+      });
     }
-    setDraft(selectedNote.content);
-    setDirty(false);
-  }, [selectedNote ? getNoteKey(selectedNote) : undefined]);
+
+    prevKeyRef.current = selectedKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey]);
+
+  // Auto-add selectedKey to openTabs when it changes (covers initial loads, vault ops, etc.)
+  useEffect(() => {
+    if (selectedKey !== undefined && !openTabs.includes(selectedKey)) {
+      setOpenTabs((prev) => (prev.includes(selectedKey!) ? prev : [...prev, selectedKey!]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey]);
 
   // Register keyboard shortcuts
   useEffect(() => {
@@ -742,11 +803,10 @@ export default function App() {
       cycleTheme();
     });
 
-    // Ctrl/Cmd+W — Close current note / go to dashboard
+    // Ctrl/Cmd+W — Close current tab
     const unregisterCloseNote = registerShortcut('w', modifier, () => {
       if (selectedKey) {
-        setSelectedKey(undefined);
-        setView('dashboard');
+        closeTabRef.current(selectedKey);
       }
     });
 
@@ -839,6 +899,11 @@ export default function App() {
   useEffect(() => {
     savePreferences({ editorMode, view });
   }, [editorMode, view]);
+
+  // Persist open tabs to localStorage
+  useEffect(() => {
+    localStorage.setItem('openTabs', JSON.stringify(openTabs));
+  }, [openTabs]);
 
   useEffect(() => {
     if (!chatSettings.open && chatContextNote) {
@@ -1136,6 +1201,9 @@ export default function App() {
       setNotes([]);
       setFolders([]);
       setSelectedKey(undefined);
+      setOpenTabs([]);
+      setDraftsMap({});
+      setDirtyTabsMap({});
       setDraft('');
       setDirty(false);
       setChatContextNote(null);
@@ -1426,13 +1494,66 @@ export default function App() {
 
   const selectNote = useCallback(
     (key: string) => {
-      if (dirty && !window.confirm('You have unsaved changes. Discard them and open another note?'))
-        return;
+      // Save current draft for the current tab before switching
+      if (selectedKey && selectedKey !== key) {
+        setDraftsMap((prev) => ({ ...prev, [selectedKey]: draftRef.current }));
+        setDirtyTabsMap((prev) => ({ ...prev, [selectedKey]: dirtyRef.current }));
+      }
+      // Add to open tabs if not already present
+      setOpenTabs((prev) => (prev.includes(key) ? prev : [...prev, key]));
       setSelectedKey(key);
       setView('editor');
     },
-    [dirty],
+    [selectedKey],
   );
+
+  const handleCloseTab = useCallback(
+    (closeKey: string) => {
+      // Find index before removal using the ref for latest value
+      const currentTabs = openTabsRef.current;
+      const closeIdx = currentTabs.indexOf(closeKey);
+      if (closeIdx === -1) return;
+
+      // Clean up stored draft/dirty for the closed tab
+      setDraftsMap((prev) => {
+        const next = { ...prev };
+        delete next[closeKey];
+        return next;
+      });
+      setDirtyTabsMap((prev) => {
+        const next = { ...prev };
+        delete next[closeKey];
+        return next;
+      });
+
+      const isActiveTab = closeKey === selectedKey;
+
+      setOpenTabs((prev) => {
+        const idx = prev.indexOf(closeKey);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next.splice(idx, 1);
+        return next;
+      });
+
+      // If closing the active tab, select an adjacent one
+      if (isActiveTab) {
+        // Compute remaining tabs based on pre-removal state
+        const remaining = [...currentTabs];
+        remaining.splice(closeIdx, 1);
+        if (remaining.length > 0) {
+          const adjacentIdx = Math.min(closeIdx, remaining.length - 1);
+          setSelectedKey(remaining[adjacentIdx]);
+        } else {
+          setSelectedKey(undefined);
+          setView('dashboard');
+        }
+      }
+    },
+    [selectedKey],
+  );
+  // Sync ref for use in keyboard shortcuts (declared earlier in component)
+  closeTabRef.current = handleCloseTab;
 
   const saveSelectedNote = useCallback(async () => {
     if (!selectedNote || !dirty) return;
@@ -2783,6 +2904,18 @@ imported: ${new Date().toISOString()}
     try {
       await deleteNote(targetVault.handle, targetNote);
       const deletedKey = getNoteKey(targetNote);
+      // Remove from tabs and clean up draft
+      setOpenTabs((prev) => prev.filter((k) => k !== deletedKey));
+      setDraftsMap((prev) => {
+        const next = { ...prev };
+        delete next[deletedKey];
+        return next;
+      });
+      setDirtyTabsMap((prev) => {
+        const next = { ...prev };
+        delete next[deletedKey];
+        return next;
+      });
       const sortedBeforeDelete = [...notes].sort((a, b) =>
         getNoteKey(a).localeCompare(getNoteKey(b)),
       );
@@ -2852,7 +2985,16 @@ imported: ${new Date().toISOString()}
 
   const updateDraft = (value: string) => {
     setDraft(value);
-    setDirty(value !== selectedNote?.content);
+    const isDirty = value !== selectedNote?.content;
+    setDirty(isDirty);
+    // Sync refs immediately for tab-switch save
+    draftRef.current = value;
+    dirtyRef.current = isDirty;
+    // Update the per-tab dirty state in the map
+    if (selectedKey) {
+      setDirtyTabsMap((prev) => ({ ...prev, [selectedKey]: isDirty }));
+      setDraftsMap((prev) => ({ ...prev, [selectedKey]: value }));
+    }
     if (selectedNote) {
       const parsed = parseNoteContent({ ...selectedNote, content: value });
       setNotes((current) =>
@@ -2990,20 +3132,30 @@ imported: ${new Date().toISOString()}
     if (view === 'agent-runs')
       return <AgentRunsView notes={notes} onSelectNote={selectNote} onChangeView={setView} />;
     return (
-      <EditorPane
-        note={selectedNote}
-        draft={draft}
-        dirty={dirty}
-        mode={editorMode}
-        showProperties={showProperties}
-        onDraftChange={updateDraft}
-        onModeChange={setEditorMode}
-        onOpenWikiLink={openWikiLink}
-        onRenameNote={requestRenameNote}
-        onDeleteNote={requestDeleteNote}
-        onCopyPath={copyNotePath}
-        onFocusMode={() => setFocusMode((v) => !v)}
-      />
+      <div className="editor-view-container">
+        <NoteTabs
+          tabs={openTabs}
+          activeKey={selectedKey}
+          dirtyTabs={dirtyTabsMap}
+          notes={notes}
+          onSelect={selectNote}
+          onClose={handleCloseTab}
+        />
+        <EditorPane
+          note={selectedNote}
+          draft={draft}
+          dirty={dirty}
+          mode={editorMode}
+          showProperties={showProperties}
+          onDraftChange={updateDraft}
+          onModeChange={setEditorMode}
+          onOpenWikiLink={openWikiLink}
+          onRenameNote={requestRenameNote}
+          onDeleteNote={requestDeleteNote}
+          onCopyPath={copyNotePath}
+          onFocusMode={() => setFocusMode((v) => !v)}
+        />
+      </div>
     );
   };
 
