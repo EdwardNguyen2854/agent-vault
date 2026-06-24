@@ -13,6 +13,8 @@ import { noteCreate } from './write';
 import { vaultListNotes } from './meta';
 import { vaultGetMetadata } from './meta';
 import { memoryList } from './meta';
+import { vaultReadImage } from './readImage';
+import { vaultSaveImage } from './saveImage';
 
 const handlers: InternalToolHandler[] = [
   vaultReadNote,
@@ -27,6 +29,8 @@ const handlers: InternalToolHandler[] = [
   vaultListNotes,
   vaultGetMetadata,
   memoryList,
+  vaultReadImage,
+  vaultSaveImage,
 ];
 
 const metadataByToolId: Record<string, Pick<Tool, 'permission' | 'risk'>> = {
@@ -36,6 +40,8 @@ const metadataByToolId: Record<string, Pick<Tool, 'permission' | 'risk'>> = {
   'vault.list_notes': { permission: 'read-only', risk: 'low' },
   'vault.get_metadata': { permission: 'read-only', risk: 'low' },
   'memory.list': { permission: 'read-only', risk: 'low' },
+  'vault.read_image': { permission: 'read-only', risk: 'low' },
+  'vault.save_image': { permission: 'ask', risk: 'medium' },
   'vault.create_task': { permission: 'ask', risk: 'medium' },
   'vault.update_note': { permission: 'ask', risk: 'medium' },
   'vault.append_to_note': { permission: 'ask', risk: 'medium' },
