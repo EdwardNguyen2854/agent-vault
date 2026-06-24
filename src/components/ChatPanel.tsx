@@ -87,6 +87,7 @@ import { taskSnapshotFromTask } from '../utils/taskConversations';
 import { canWriteVaultNote } from '../utils/vault';
 import { getWorkspaceEntityType, renderChatMarkdownToHtml } from '../utils/markdown';
 import { runToolLoop } from '../utils/toolLoop';
+import { runSimpleChat } from '../utils/agentExecution';
 import {
   getAllTools,
   formatPermission,
@@ -1573,11 +1574,14 @@ export function ChatPanel({
             ),
           );
         } else {
-          // Fall back to plain chat without tools
-          const finalResponse = await sendChatMessage(
-            aiConfig.lmStudio,
-            providerMessages,
-            (chunk) => {
+          // Fall back to plain chat without tools - delegate to agentExecution
+          const result = await runSimpleChat({
+            baseUrl: aiConfig.lmStudio.baseUrl,
+            modelName: aiConfig.lmStudio.modelName,
+            streaming: aiConfig.lmStudio.streaming,
+            messages: providerMessages,
+            signal,
+            onChunk: (chunk) => {
               lastContent += chunk;
               setMessages((prev) =>
                 prev.map((message) =>
@@ -1587,17 +1591,24 @@ export function ChatPanel({
                 ),
               );
             },
-            signal,
-          );
-          thinking = finalResponse.reasoning ?? '';
+          });
+          thinking = result.reasoning ?? '';
           setMessages((prev) =>
             prev.map((message) =>
               message.id === assistantId
-                ? { ...message, content: finalResponse.content, thinking: finalResponse.reasoning }
+                ? { ...message, content: result.content, thinking: result.reasoning }
                 : message,
             ),
           );
-          lastContent = finalResponse.content;
+          lastContent = result.content;
+          if (result.cancelled) {
+            cancelled = true;
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantId ? { ...message, cancelled: true } : message,
+              ),
+            );
+          }
         }
       } catch (err) {
         const parsed = parseLMStudioError(err);

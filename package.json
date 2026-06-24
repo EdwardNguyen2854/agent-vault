@@ -14,7 +14,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "bridge:dev": "npm --prefix bridge run dev",
-    "bridge:start": "npm --prefix bridge run start"
+    "bridge:start": "npm --prefix bridge run start",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.17.1-08b13f9",
@@ -35,7 +37,10 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/three": "0.184.1",
+    "@vitest/ui": "^4.1.9",
+    "jsdom": "^29.1.1",
     "prettier": "3.5.3",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^4.1.9"
   }
 }
