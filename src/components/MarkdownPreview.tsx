@@ -8,6 +8,7 @@ import {
   splitFrontmatter,
 } from '../utils/markdown';
 import { handleMarkdownShortcut } from '../utils/markdownShortcuts';
+import { renderMermaidDiagrams } from './MermaidRenderer';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -287,22 +288,38 @@ export function MarkdownPreview({
     [startEditing],
   );
 
+  // --- Mermaid diagram rendering ---
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const isDark = document.documentElement.dataset.theme === 'dark';
+    const raf = requestAnimationFrame(() => {
+      renderMermaidDiagrams(el, isDark ? 'dark' : 'light');
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [content]);
+
   // --- Fallback: non-editable mode (render full HTML) ---
   if (!canEdit) {
     return (
-      <article
-        className="markdown-preview"
-        onClick={(e) => {
-          void handleBlockClick(e, blocks[0]);
-        }}
-        dangerouslySetInnerHTML={{ __html: blocks[0]?.html ?? '' }}
-      />
+      <div ref={containerRef}>
+        <article
+          className="markdown-preview"
+          onClick={(e) => {
+            void handleBlockClick(e, blocks[0]);
+          }}
+          dangerouslySetInnerHTML={{ __html: blocks[0]?.html ?? '' }}
+        />
+      </div>
     );
   }
 
   // --- Inline block editing mode ---
   return (
-    <div className="markdown-preview markdown-preview-blocks">
+    <div ref={containerRef} className="markdown-preview markdown-preview-blocks">
       {blocks.map((block) => {
         // Block being edited → show textarea
         if (block.id === editingId) {
