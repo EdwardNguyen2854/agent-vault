@@ -1796,6 +1796,113 @@ pre[data-mermaid-rendered='true'] svg {
   height: auto;
 }
 
+/* ── Excalidraw diagram blocks ── */
+pre code.language-excalidraw {
+  display: block;
+}
+
+/* Rendered excalidraw container */
+.excalidraw-container.rendered {
+  display: block;
+  min-height: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin: var(--space-2) 0;
+}
+
+.excalidraw-container.rendered .excalidraw-error {
+  display: block;
+  padding: var(--space-3);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+/* Excalidraw editor overlay */
+.excalidraw-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.excalidraw-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.excalidraw-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.excalidraw-editor-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.excalidraw-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.excalidraw-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.excalidraw-save-btn:hover {
+  background: var(--primary-hover);
+}
+
+.excalidraw-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.excalidraw-editor-canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Ensure the Excalidraw canvas fills its container */
+.excalidraw-editor-canvas > div {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
 /* ============================================
    EMPTY STATE
    ============================================ */

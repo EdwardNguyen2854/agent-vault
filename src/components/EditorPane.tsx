@@ -9,6 +9,7 @@ import {
   LayoutPanelTop,
   MoreHorizontal,
   PencilLine,
+  Pen,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import type { EditorMode, VaultNote } from '../types';
 import { handleMarkdownShortcut } from '../utils/markdownShortcuts';
 import { countWords } from '../utils/text';
 import { MarkdownPreview } from './MarkdownPreview';
+import { ExcalidrawEditor } from './ExcalidrawEditor';
 
 interface EditorPaneProps {
   note?: VaultNote;
@@ -66,6 +68,8 @@ export function EditorPane({
   onFocusMode,
 }: EditorPaneProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [excalidrawOpen, setExcalidrawOpen] = useState(false);
+  const [excalidrawInitialScene, setExcalidrawInitialScene] = useState<string | null>(null);
 
   if (!note) {
     return (
@@ -134,6 +138,21 @@ export function EditorPane({
               );
             })}
           </div>
+
+          {/* Insert Excalidraw button (only in edit/split mode) */}
+          {mode !== 'preview' && (
+            <button
+              className="icon-btn"
+              onClick={() => {
+                setExcalidrawInitialScene(null);
+                setExcalidrawOpen(true);
+              }}
+              title="Insert Excalidraw diagram"
+              aria-label="Insert Excalidraw diagram"
+            >
+              <Pen size={14} />
+            </button>
+          )}
 
           {/* More menu */}
           <div className="editor-more-menu">
@@ -250,6 +269,27 @@ export function EditorPane({
           />
         ) : null}
       </div>
+
+      {/* Excalidraw editor overlay */}
+      {excalidrawOpen && (
+        <div className="excalidraw-overlay">
+          <ExcalidrawEditor
+            initialScene={excalidrawInitialScene}
+            theme={document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'}
+            onSave={(json) => {
+              // Insert the excalidraw code block into the draft
+              const block = '```excalidraw\n' + json + '\n```\n\n';
+              onDraftChange(draft ? draft + '\n\n' + block : block);
+              setExcalidrawOpen(false);
+              setExcalidrawInitialScene(null);
+            }}
+            onClose={() => {
+              setExcalidrawOpen(false);
+              setExcalidrawInitialScene(null);
+            }}
+          />
+        </div>
+      )}
     </main>
   );
 }

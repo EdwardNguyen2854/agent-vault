@@ -9,6 +9,7 @@ import {
 } from '../utils/markdown';
 import { handleMarkdownShortcut } from '../utils/markdownShortcuts';
 import { renderMermaidDiagrams } from './MermaidRenderer';
+import { renderExcalidrawDiagrams } from './ExcalidrawRenderer';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -298,6 +299,17 @@ export function MarkdownPreview({
     const isDark = document.documentElement.dataset.theme === 'dark';
     const raf = requestAnimationFrame(() => {
       renderMermaidDiagrams(el, isDark ? 'dark' : 'light');
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [content]);
+
+  // --- Excalidraw diagram rendering ---
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const raf = requestAnimationFrame(() => {
+      renderExcalidrawDiagrams(el);
     });
     return () => cancelAnimationFrame(raf);
   }, [content]);
