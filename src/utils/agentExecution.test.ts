@@ -287,7 +287,7 @@ describe('runAgentChat (tool-free)', () => {
 
     expect(result.content).toBe('Agent response');
     expect(result.status).toBe('completed');
-    expect(result.cancelled).toBe(false);
+    expect(result.status === 'cancelled').toBe(false);
     expect(result.transcript).toHaveLength(0);
   });
 
@@ -351,7 +351,6 @@ describe('runAgentChat (tool-free)', () => {
     controller.abort();
 
     const result = await chatPromise;
-    expect(result.cancelled).toBe(true);
     expect(result.status).toBe('cancelled');
   });
 
@@ -373,7 +372,6 @@ describe('runAgentChat (tool-free)', () => {
       false,
     );
 
-    expect(result.cancelled).toBe(true);
     expect(result.status).toBe('cancelled');
   });
 
@@ -542,7 +540,6 @@ describe('runAgentChat (with tools)', () => {
     controller.abort();
 
     const result = await chatPromise;
-    expect(result.cancelled).toBe(true);
     expect(result.status).toBe('cancelled');
   });
 });

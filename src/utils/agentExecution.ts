@@ -106,12 +106,14 @@ export type AgentExecutionStatus =
 
 export interface AgentExecutionResult {
   content: string;
-  cancelled: boolean;
   reasoning?: string;
   transcript: ToolCallRecord[];
   approvals: AgentRunApproval[];
+  iterations: number;
   status: AgentExecutionStatus;
   error?: string;
+  startedAt: number;
+  completedAt: number;
 }
 
 // ============================================================================
@@ -584,11 +586,13 @@ export async function runAgentChat(
     sessionApprovedTools: externalSessionApprovedTools,
   } = options;
 
+  const startedAt = Date.now();
   let lastContent = '';
   let cancelled = false;
   let reasoning = '';
   const transcript: ToolCallRecord[] = [];
   const approvals: AgentRunApproval[] = [];
+  let iterations = 0;
 
   // Session-approved tools - can be passed in or created locally
   const sessionApprovedTools = externalSessionApprovedTools ?? new Set<string>();
@@ -619,7 +623,6 @@ export async function runAgentChat(
     if (useTools) {
       // Tool-aware execution loop
       const allTools = getAllTools(notes);
-      let iterations = 0;
       let loopMessages = [...providerMessages];
 
       while (iterations < maxIterations) {
@@ -642,12 +645,14 @@ export async function runAgentChat(
         } catch (err) {
           return {
             content: lastContent,
-            cancelled: signal?.aborted ?? false,
             reasoning,
             transcript,
             approvals,
+            iterations,
             status: 'failed',
             error: err instanceof Error ? err.message : String(err),
+            startedAt,
+            completedAt: Date.now(),
           };
         }
 
@@ -788,11 +793,13 @@ export async function runAgentChat(
       if (iterations >= maxIterations) {
         return {
           content: lastContent,
-          cancelled: false,
           reasoning,
           transcript,
           approvals,
+          iterations,
           status: 'iteration-limited',
+          startedAt,
+          completedAt: Date.now(),
         };
       }
     } else {
@@ -821,35 +828,40 @@ export async function runAgentChat(
   } catch (err) {
     // Check if it was a cancellation
     if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
-      cancelled = true;
       return {
         content: lastContent,
-        cancelled: true,
         reasoning,
         transcript,
         approvals,
+        iterations,
         status: 'cancelled',
+        startedAt,
+        completedAt: Date.now(),
       };
     }
 
     return {
       content: lastContent,
-      cancelled: false,
       reasoning,
       transcript,
       approvals,
+      iterations,
       status: 'failed',
       error: err instanceof Error ? err.message : String(err),
+      startedAt,
+      completedAt: Date.now(),
     };
   }
 
   return {
     content: lastContent,
-    cancelled,
     reasoning,
     transcript,
     approvals,
+    iterations,
     status: cancelled ? 'cancelled' : 'completed',
+    startedAt,
+    completedAt: Date.now(),
   };
 }
 

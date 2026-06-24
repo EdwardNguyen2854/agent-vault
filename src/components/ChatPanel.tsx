@@ -35,6 +35,7 @@ import type { PointerEvent } from 'react';
 import type {
   Agent,
   AgentContextItem,
+  AgentRun,
   AgentRunApproval,
   ChatAgentBusyState,
   ChatAttachment,
@@ -86,8 +87,7 @@ import {
 import { taskSnapshotFromTask } from '../utils/taskConversations';
 import { canWriteVaultNote } from '../utils/vault';
 import { getWorkspaceEntityType, renderChatMarkdownToHtml } from '../utils/markdown';
-import { runToolLoop } from '../utils/toolLoop';
-import { runSimpleChat } from '../utils/agentExecution';
+import { runAgentChat } from '../utils/agentExecution';
 import {
   getAllTools,
   formatPermission,
@@ -1238,6 +1238,10 @@ export function ChatPanel({
       transcript?: ToolCallRecord[];
       approvals?: AgentRunApproval[];
       thinking?: string;
+      status: 'completed' | 'cancelled' | 'iteration-limited' | 'failed';
+      error?: string;
+      startedAt: number;
+      completedAt: number;
     }> => {
       const aiConfig = loadAIProviderConfig();
       if (aiConfig.provider !== 'lmstudio') {
@@ -1334,29 +1338,35 @@ export function ChatPanel({
         },
       ];
 
-      let lastContent = '';
-      let cancelled = false;
-      let transcript: ToolCallRecord[] = [];
-      const approvals: AgentRunApproval[] = [];
-      let thinking = '';
-
       try {
-        if (useTools) {
-          const result = await runToolLoop({
+        const result = await runAgentChat(
+          {
+            baseUrl: aiConfig.lmStudio.baseUrl,
+            modelName: aiConfig.lmStudio.modelName,
+            streaming: aiConfig.lmStudio.streaming,
             agent,
-            agentNote: selectedAgentNote,
+            messages: providerMessages,
+            prompt,
+            attachments,
             notes,
             selectedNote,
             personalRootHandle,
             personalVaultSource,
             contextItems: effectiveContextItems,
-            messages: providerMessages,
             onChunk: (chunk) => {
-              lastContent += chunk;
               setMessages((prev) =>
                 prev.map((message) =>
                   message.id === assistantId
                     ? { ...message, content: message.content + chunk }
+                    : message,
+                ),
+              );
+            },
+            onReasoning: (reasoning) => {
+              setMessages((prev) =>
+                prev.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, thinking: reasoning }
                     : message,
                 ),
               );
@@ -1397,18 +1407,6 @@ export function ChatPanel({
                         decision,
                       });
                     }
-                    approvals.push({
-                      id: generateId(),
-                      toolId: tool.id,
-                      toolName: tool.name,
-                      input,
-                      decision,
-                      timestamp: Date.now(),
-                      decisionReason:
-                        decision === 'deny'
-                          ? 'User denied in permission dialog'
-                          : 'User approved in permission dialog',
-                    });
                     resolve(
                       decision === 'allow_once' ||
                         decision === 'allow_session' ||
@@ -1420,83 +1418,58 @@ export function ChatPanel({
             },
             signal,
             maxIterations: 12,
-            baseUrl: aiConfig.lmStudio.baseUrl,
-            modelName: aiConfig.lmStudio.modelName,
-            streaming: aiConfig.lmStudio.streaming,
-          });
+          },
+          useTools,
+        );
 
-          if (result.error) {
-            throw new Error(result.error);
-          }
+        // Update message with final content and transcript
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  content: result.content,
+                  thinking: result.reasoning,
+                  toolTranscript: result.transcript,
+                  cancelled: result.status === 'cancelled',
+                }
+              : message,
+          ),
+        );
 
-          lastContent = result.finalContent;
-          transcript = result.transcript;
-          thinking = result.reasoning ?? '';
-
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    content: result.finalContent,
-                    thinking: result.reasoning,
-                    toolTranscript: transcript,
-                  }
-                : message,
-            ),
-          );
-        } else {
-          // Fall back to plain chat without tools - delegate to agentExecution
-          const result = await runSimpleChat({
-            baseUrl: aiConfig.lmStudio.baseUrl,
-            modelName: aiConfig.lmStudio.modelName,
-            streaming: aiConfig.lmStudio.streaming,
-            messages: providerMessages,
-            signal,
-            onChunk: (chunk) => {
-              lastContent += chunk;
-              setMessages((prev) =>
-                prev.map((message) =>
-                  message.id === assistantId
-                    ? { ...message, content: message.content + chunk }
-                    : message,
-                ),
-              );
-            },
-          });
-          thinking = result.reasoning ?? '';
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? { ...message, content: result.content, thinking: result.reasoning }
-                : message,
-            ),
-          );
-          lastContent = result.content;
-          if (result.cancelled) {
-            cancelled = true;
-            setMessages((prev) =>
-              prev.map((message) =>
-                message.id === assistantId ? { ...message, cancelled: true } : message,
-              ),
-            );
-          }
-        }
+        return {
+          content: result.content,
+          cancelled: result.status === 'cancelled',
+          transcript: result.transcript,
+          approvals: result.approvals,
+          thinking: result.reasoning,
+          status: result.status,
+          error: result.error,
+          startedAt: result.startedAt,
+          completedAt: result.completedAt,
+        };
       } catch (err) {
         const parsed = parseLMStudioError(err);
         if (parsed.code === 'CANCELLED') {
-          cancelled = true;
           setMessages((prev) =>
             prev.map((message) =>
               message.id === assistantId ? { ...message, cancelled: true } : message,
             ),
           );
-        } else {
-          throw err;
+          return {
+            content: '',
+            cancelled: true,
+            transcript: [],
+            approvals: [],
+            thinking: '',
+            status: 'cancelled',
+            error: undefined,
+            startedAt: Date.now(),
+            completedAt: Date.now(),
+          };
         }
+        throw err;
       }
-
-      return { content: lastContent, cancelled, transcript, approvals, thinking };
     },
     [
       contextItems,
@@ -1566,17 +1539,9 @@ export function ChatPanel({
       }
 
       let failed = false;
-      const runStartedAt = Date.now();
       const runId = assistantId;
-      let recordedTranscript: ToolCallRecord[] = [];
       try {
-        const {
-          content: response,
-          cancelled,
-          transcript,
-          approvals,
-          thinking,
-        } = await runChat(
+        const result = await runChat(
           messages,
           prompt,
           assistantId,
@@ -1585,25 +1550,12 @@ export function ChatPanel({
           effectiveSkillNote,
           effectiveContextItems,
         );
-        recordedTranscript = transcript ?? [];
 
-        if (cancelled) {
-          recordAgentRun({
-            id: runId,
-            agentKey: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
-            agentName: selectedAgentNote?.title ?? 'Assistant',
-            skillKey: effectiveSkillNote ? getNoteKey(effectiveSkillNote) : undefined,
-            skillName: effectiveSkillNote?.title,
-            model: aiConfig.lmStudio.modelName,
-            provider: 'lmstudio',
-            status: 'cancelled',
-            startedAt: runStartedAt,
-            toolCount: recordedTranscript.length,
-          });
-          return;
-        }
+        // Map execution status to AgentRunStatus
+        const runStatus: AgentRun['status'] =
+          result.status === 'iteration-limited' ? 'skipped' : result.status;
 
-        // Record successful agent run
+        // Record the agent run with all info from execution result
         recordAgentRun({
           id: runId,
           agentKey: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
@@ -1612,13 +1564,14 @@ export function ChatPanel({
           skillName: effectiveSkillNote?.title,
           model: aiConfig.lmStudio.modelName,
           provider: 'lmstudio',
-          status: 'completed',
-          startedAt: runStartedAt,
-          completedAt: Date.now(),
-          toolCount: recordedTranscript.length,
+          status: runStatus,
+          startedAt: result.startedAt,
+          completedAt: result.status === 'completed' ? result.completedAt : undefined,
+          toolCount: result.transcript?.length ?? 0,
+          error: result.error,
         });
 
-        // Record skill usage
+        // Record skill usage based on final status
         if (effectiveSkillNote) {
           const skillId = getNoteKey(effectiveSkillNote);
           recordSkillUse({
@@ -1626,37 +1579,37 @@ export function ChatPanel({
             skillName: effectiveSkillNote.title,
             agentId: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
             agentName: selectedAgentNote?.title ?? 'unknown',
-            success: true,
+            success: result.status === 'completed',
           });
         }
 
         await onAgentResponse?.({
           userPrompt: prompt,
-          response,
+          response: result.content,
           agentName: selectedAgentNote?.title ?? 'Assistant',
           skillName: effectiveSkillNote?.title,
           model: aiConfig.lmStudio.modelName,
           provider: 'lmstudio',
           sourceNote: selectedNote?.title,
           contextItems: effectiveContextItems.map((item) => item.title),
-          transcript,
-          toolsUsed: transcript?.map((t) => t.toolId) ?? [],
-          approvals,
-          reasoningSummary: thinking,
+          transcript: result.transcript,
+          toolsUsed: result.transcript?.map((t) => t.toolId) ?? [],
+          approvals: result.approvals,
+          reasoningSummary: result.thinking,
         });
         queueMemoryReflection({
           userPrompt: prompt,
-          response,
+          response: result.content,
           agentName: selectedAgentNote?.title ?? 'Assistant',
           skillName: effectiveSkillNote?.title,
-          transcript,
-          approvals,
+          transcript: result.transcript,
+          approvals: result.approvals,
         });
       } catch (error) {
         failed = true;
         setAgentBusyState('error');
 
-        // Record failed agent run
+        // Record failed agent run - use current time since we don't have execution result
         recordAgentRun({
           id: runId,
           agentKey: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
@@ -1666,9 +1619,9 @@ export function ChatPanel({
           model: aiConfig.lmStudio.modelName,
           provider: 'lmstudio',
           status: 'failed',
-          startedAt: runStartedAt,
+          startedAt: Date.now(),
           completedAt: Date.now(),
-          toolCount: recordedTranscript.length,
+          toolCount: 0,
           error: error instanceof Error ? error.message : String(error),
         });
 
@@ -1862,41 +1815,35 @@ export function ChatPanel({
       abortControllerRef.current = controller;
       let failed = false;
       try {
-        const {
-          content: response,
-          cancelled,
-          transcript,
-          approvals,
-          thinking,
-        } = await runChat(
+        const result = await runChat(
           historyBeforeUser,
           userPrompt.content,
           assistantId,
           controller.signal,
           userPrompt.attachments ?? [],
         );
-        if (cancelled) return;
+        if (result.cancelled) return;
         await onAgentResponse?.({
           userPrompt: userPrompt.content,
-          response,
+          response: result.content,
           agentName: selectedAgentNote?.title ?? 'Assistant',
           skillName: selectedSkillNote?.title,
           model: aiConfig.lmStudio.modelName,
           provider: 'lmstudio',
           sourceNote: selectedNote?.title,
           contextItems: contextItems.map((item) => item.title),
-          transcript,
-          toolsUsed: transcript?.map((t) => t.toolId) ?? [],
-          approvals,
-          reasoningSummary: thinking,
+          transcript: result.transcript,
+          toolsUsed: result.transcript?.map((t) => t.toolId) ?? [],
+          approvals: result.approvals,
+          reasoningSummary: result.thinking,
         });
         queueMemoryReflection({
           userPrompt: userPrompt.content,
-          response,
+          response: result.content,
           agentName: selectedAgentNote?.title ?? 'Assistant',
           skillName: selectedSkillNote?.title,
-          transcript,
-          approvals,
+          transcript: result.transcript,
+          approvals: result.approvals,
         });
       } catch (error) {
         failed = true;
@@ -1976,41 +1923,35 @@ export function ChatPanel({
       abortControllerRef.current = controller;
       let failed = false;
       try {
-        const {
-          content: response,
-          cancelled,
-          transcript,
-          approvals,
-          thinking,
-        } = await runChat(
+        const result = await runChat(
           historyBeforeUser,
           newPrompt,
           assistantId,
           controller.signal,
           attachments,
         );
-        if (cancelled) return;
+        if (result.cancelled) return;
         await onAgentResponse?.({
           userPrompt: newPrompt,
-          response,
+          response: result.content,
           agentName: selectedAgentNote?.title ?? 'Assistant',
           skillName: selectedSkillNote?.title,
           model: aiConfig.lmStudio.modelName,
           provider: 'lmstudio',
           sourceNote: selectedNote?.title,
           contextItems: contextItems.map((item) => item.title),
-          transcript,
-          toolsUsed: transcript?.map((t) => t.toolId) ?? [],
-          approvals,
-          reasoningSummary: thinking,
+          transcript: result.transcript,
+          toolsUsed: result.transcript?.map((t) => t.toolId) ?? [],
+          approvals: result.approvals,
+          reasoningSummary: result.thinking,
         });
         queueMemoryReflection({
           userPrompt: newPrompt,
-          response,
+          response: result.content,
           agentName: selectedAgentNote?.title ?? 'Assistant',
           skillName: selectedSkillNote?.title,
-          transcript,
-          approvals,
+          transcript: result.transcript,
+          approvals: result.approvals,
         });
       } catch (error) {
         failed = true;
