@@ -555,7 +555,7 @@ export function renderMarkdownToHtml(content: string): string {
   );
   const html = marked.parse(withWikiAnchors, { async: false }) as string;
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'data-wikilink'],
+    ADD_ATTR: ['target', 'data-wikilink', 'src', 'alt'],
     ADD_TAGS: ['iframe'],
   });
 }
@@ -667,7 +667,7 @@ export function renderBlockToHtml(raw: string): string {
   });
   const html = marked.parse(withWikiAnchors, { async: false }) as string;
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'data-wikilink'],
+    ADD_ATTR: ['target', 'data-wikilink', 'src', 'alt'],
     ADD_TAGS: ['iframe'],
   });
 }
@@ -681,7 +681,7 @@ export function renderBlockToHtml(raw: string): string {
 export function renderChatMarkdownToHtml(content: string): string {
   const html = marked.parse(content, { async: false, gfm: true }) as string;
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'rel'],
+    ADD_ATTR: ['target', 'rel', 'src', 'alt'],
     FORBID_TAGS: ['style', 'script', 'iframe', 'form'],
     FORBID_ATTR: ['onerror', 'onload', 'onclick'],
   });
