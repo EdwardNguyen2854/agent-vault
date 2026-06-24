@@ -82,7 +82,7 @@ import { TopBar } from './components/TopBar';
 import { AgentsView } from './components/AgentsView';
 import { ContextView } from './components/ContextView';
 import { AboutPage, DocumentationPage, ReleasePage, RoadmapPage } from './components/ProductPages';
-import { registerShortcut, unregisterAll, isMac } from './utils/keyboard';
+import { registerShortcut, unregisterAll, handleKeyboardEvent, isMac } from './utils/keyboard';
 import type { ToolPermission } from './types';
 import { ChatPanel } from './components/ChatPanel';
 import { SkillsView } from './components/SkillsView';
@@ -327,6 +327,7 @@ export default function App() {
   const [needsWriteGrant, setNeedsWriteGrant] = useState<{ id: string; name: string } | null>(null);
   const [grantingWrite, setGrantingWrite] = useState(false);
   const markitdownSeedRef = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const changeTheme = useCallback((theme: ThemeMode) => {
     saveTheme(theme);
@@ -334,6 +335,13 @@ export default function App() {
     const resolved: 'light' | 'dark' = theme === 'system' ? getSystemTheme() : theme;
     document.documentElement.dataset.theme = resolved;
   }, []);
+
+  const cycleTheme = useCallback(() => {
+    const order: ThemeMode[] = ['light', 'dark', 'system'];
+    const currentIndex = order.indexOf(currentTheme);
+    const nextTheme = order[(currentIndex + 1) % order.length];
+    changeTheme(nextTheme);
+  }, [currentTheme, changeTheme]);
 
   const handleShowPropertiesChange = useCallback(
     (value: boolean) => {
@@ -713,13 +721,76 @@ export default function App() {
       setView('settings');
     });
 
+    // Ctrl/Cmd+D — Cycle theme: light → dark → system → light
+    const unregisterTheme = registerShortcut('d', modifier, () => {
+      cycleTheme();
+    });
+
+    // Ctrl/Cmd+W — Close current note / go to dashboard
+    const unregisterCloseNote = registerShortcut('w', modifier, () => {
+      if (selectedKey) {
+        setSelectedKey(undefined);
+        setView('dashboard');
+      }
+    });
+
+    // Ctrl/Cmd+P — Toggle properties panel
+    const unregisterProperties = registerShortcut('p', modifier, () => {
+      handleShowPropertiesChange(!showProperties);
+    });
+
+    // Ctrl/Cmd+B — Toggle sidebar
+    const unregisterSidebar = registerShortcut('b', modifier, () => {
+      if (window.innerWidth <= 899) {
+        setMobileNavOpen((v) => !v);
+        if (sidebarMinimized) setSidebarMinimized(false);
+      } else {
+        setSidebarMinimized((v) => !v);
+      }
+    });
+
+    // Ctrl/Cmd+Shift+F — Focus file tree search
+    const unregisterSearchFocus = registerShortcut('f', modifier, () => {
+      searchInputRef.current?.focus();
+    }, true);
+
+    // Ctrl/Cmd+Shift+E — Toggle focus mode
+    const unregisterFocusMode = registerShortcut('e', modifier, () => {
+      setFocusMode((v) => !v);
+    }, true);
+
+    // Ctrl/Cmd+Shift+T — Switch to Tasks view
+    const unregisterTasks = registerShortcut('t', modifier, () => {
+      setView('tasks');
+    }, true);
+
+    // Ctrl/Cmd+Shift+D — Switch to Dashboard view
+    const unregisterDashboard = registerShortcut('d', modifier, () => {
+      setView('dashboard');
+    }, true);
+
+    // Wire up global keydown listener so registered shortcuts fire
+    const onKeyDown = (event: KeyboardEvent) => {
+      handleKeyboardEvent(event);
+    };
+    window.addEventListener('keydown', onKeyDown);
+
     return () => {
       unregisterCommandCenter();
       unregisterNewNote();
       unregisterSettings();
+      unregisterTheme();
+      unregisterCloseNote();
+      unregisterProperties();
+      unregisterSidebar();
+      unregisterSearchFocus();
+      unregisterFocusMode();
+      unregisterTasks();
+      unregisterDashboard();
       unregisterAll();
+      window.removeEventListener('keydown', onKeyDown);
     };
-  }, [view, selectedNote]);
+  }, [view, selectedNote, cycleTheme, showProperties, handleShowPropertiesChange, sidebarMinimized]);
 
   // Legacy keyboard handler for save
   useEffect(() => {
@@ -2987,6 +3058,7 @@ imported: ${new Date().toISOString()}
           onDeleteFolder={deleteFolderFromTree}
           visible={fileTreeVisible}
           expandAll={expandFileTree}
+          searchInputRef={searchInputRef}
         />
         {mainContent()}
       </div>

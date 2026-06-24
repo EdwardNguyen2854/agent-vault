@@ -3,6 +3,7 @@ type Modifier = 'ctrl' | 'meta' | 'alt';
 interface ShortcutEntry {
   key: string;
   modifier: Modifier;
+  shift: boolean;
   callback: () => void;
 }
 
@@ -16,8 +17,9 @@ export function registerShortcut(
   key: string,
   modifier: Modifier,
   callback: () => void,
+  shift?: boolean,
 ): () => void {
-  const entry: ShortcutEntry = { key: key.toLowerCase(), modifier, callback };
+  const entry: ShortcutEntry = { key: key.toLowerCase(), modifier, shift: shift ?? false, callback };
   shortcuts.push(entry);
 
   return () => {
@@ -39,7 +41,11 @@ export function handleKeyboardEvent(event: KeyboardEvent): boolean {
   if (!modifier) return false;
 
   for (const shortcut of shortcuts) {
-    if (shortcut.key === key && shortcut.modifier === modifier) {
+    if (
+      shortcut.key === key &&
+      shortcut.modifier === modifier &&
+      shortcut.shift === event.shiftKey
+    ) {
       event.preventDefault();
       shortcut.callback();
       return true;
