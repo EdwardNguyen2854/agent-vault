@@ -95,9 +95,7 @@ import {
   getPermissionColorClass,
   getRiskColorClass,
 } from '../utils/tools';
-import { dispatchInternalTool } from '../utils/internalTools';
 import { getAlwaysAllowIds, setAlwaysAllowId, logPermissionGrant } from '../utils/permissions';
-import { evaluateToolCall } from '../utils/permissionGate';
 import { recordAgentRun, recordSkillUse } from '../utils/usageStore';
 import type { PermissionDecision } from './AskPermissionDialog';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
@@ -332,44 +330,6 @@ function renderPayload(label: string, value: unknown) {
       )}
     </div>
   );
-}
-
-function getListNotesInput(prompt: string): Record<string, unknown> | null {
-  const normalized = prompt.toLowerCase();
-  const asksForNotes = /\b(list|show|display)\b/.test(normalized) && /\bnotes?\b/.test(normalized);
-  if (!asksForNotes) return null;
-
-  const input: Record<string, unknown> = { max_results: 500 };
-  if (/\bpersonal\b/.test(normalized)) input.vault_role = 'personal';
-  if (/\bshared\b/.test(normalized)) input.vault_role = 'shared';
-  if (/\bagent\b/.test(normalized)) input.vault_role = 'agent';
-
-  const folderMatch = normalized.match(/\bin\s+([a-z0-9 _/-]+?)\s+folder\b/);
-  if (folderMatch?.[1]) {
-    input.folder = folderMatch[1].trim();
-  }
-
-  return input;
-}
-
-function formatListNotesOutput(output: unknown): string {
-  if (!Array.isArray(output)) return 'No notes found.';
-  if (output.length === 0) return 'No notes found.';
-
-  return output
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const note = item as { title?: unknown; path?: unknown; tags?: unknown };
-      const title = typeof note.title === 'string' ? note.title : 'Untitled';
-      const path = typeof note.path === 'string' ? note.path : '';
-      const tags =
-        Array.isArray(note.tags) && note.tags.length > 0
-          ? ` #${note.tags.map(String).join(' #')}`
-          : '';
-      return `- ${title}${path ? ` (${path})` : ''}${tags}`;
-    })
-    .filter(Boolean)
-    .join('\n');
 }
 
 const MAX_TEXTAREA_ROWS = 8;
@@ -1381,94 +1341,6 @@ export function ChatPanel({
       let thinking = '';
 
       try {
-        const listNotesInput = useTools ? getListNotesInput(prompt) : null;
-        if (listNotesInput) {
-          const listNotesTool = getAllTools(notes).find((tool) => tool.id === 'vault.list_notes');
-          const listNotesGate = listNotesTool
-            ? evaluateToolCall(listNotesTool, agent, {
-                notes,
-                currentNote: selectedNote ?? undefined,
-                selectedAgent: selectedAgentNote ?? undefined,
-                agent,
-                personalRootHandle,
-                personalVaultSource,
-              })
-            : null;
-          if (!listNotesTool || listNotesGate?.decision === 'deny') {
-            throw new Error(listNotesGate?.reason ?? 'List Notes tool is unavailable.');
-          }
-          const toolCallId = `call_${generateId()}`;
-          const startedAt = Date.now();
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    activities: upsertToolActivity(message.activities, {
-                      id: toolCallId,
-                      toolId: 'vault.list_notes',
-                      toolName: 'List Notes',
-                      input: listNotesInput,
-                      status: 'running',
-                      startedAt,
-                    }),
-                  }
-                : message,
-            ),
-          );
-
-          const toolResult = await dispatchInternalTool('vault.list_notes', listNotesInput, {
-            notes,
-            currentNote: selectedNote ?? undefined,
-            selectedAgent: selectedAgentNote ?? undefined,
-            agent,
-            personalRootHandle,
-            personalVaultSource,
-          });
-
-          const record: ToolCallRecord = {
-            id: toolCallId,
-            toolId: 'vault.list_notes',
-            toolName: 'List Notes',
-            input: listNotesInput,
-            output: toolResult.output,
-            error: toolResult.error,
-            decision: 'allow',
-            decisionReason: 'Direct note-list request',
-            durationMs: toolResult.durationMs,
-            startedAt,
-          };
-          transcript = [record];
-          lastContent = toolResult.success
-            ? formatListNotesOutput(toolResult.output)
-            : `Error: ${toolResult.error ?? 'Could not list notes.'}`;
-
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    content: lastContent,
-                    toolTranscript: transcript,
-                    activities: upsertToolActivity(message.activities, {
-                      id: toolCallId,
-                      toolId: 'vault.list_notes',
-                      toolName: 'List Notes',
-                      input: listNotesInput,
-                      output: toolResult.output,
-                      error: toolResult.error,
-                      status: toolResult.success ? 'succeeded' : 'failed',
-                      startedAt,
-                      completedAt: Date.now(),
-                    }),
-                  }
-                : message,
-            ),
-          );
-
-          return { content: lastContent, cancelled, transcript, thinking };
-        }
-
         if (useTools) {
           const result = await runToolLoop({
             agent,

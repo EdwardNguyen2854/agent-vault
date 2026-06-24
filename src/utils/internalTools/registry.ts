@@ -73,6 +73,10 @@ export function getInternalTools(): Tool[] {
   }));
 }
 
+export function getInternalTool(toolId: string): Tool | undefined {
+  return getInternalTools().find((t) => t.id === toolId);
+}
+
 export async function dispatchInternalTool(
   toolId: string,
   input: Record<string, unknown>,

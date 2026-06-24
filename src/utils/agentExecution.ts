@@ -35,6 +35,12 @@ import { dispatchInternalTool } from './internalTools';
 import { invokeBridgeTool } from './bridgeClient';
 import { getAllTools } from './tools';
 import { recordToolCall } from './usageStore';
+import {
+  type ToolAdapter,
+  internalToolAdapter,
+  mcpToolAdapter,
+  getToolAdapter,
+} from './toolAdapter';
 
 // ============================================================================
 // Types & Interfaces
@@ -79,6 +85,9 @@ export interface AgentExecutionOptions {
 
   /** Injectable model adapter (defaults to LM Studio) */
   modelAdapter?: ModelAdapter;
+
+  /** Injectable tool adapter for testing (defaults to internalToolAdapter) */
+  toolAdapter?: ToolAdapter;
 }
 
 export type AgentExecutionStatus =
@@ -154,10 +163,11 @@ async function executeToolCall(
     onEvent?: (event: ToolLoopEvent) => void;
     onAsk?: (tool: Tool, input: unknown) => Promise<boolean>;
     signal?: AbortSignal;
+    toolAdapter?: ToolAdapter;
   },
   agent?: Agent,
 ): Promise<{ record: ToolCallRecord; toolResult: ToolInvocationResult; outputContent: string }> {
-  const { onEvent, onAsk, signal } = options;
+  const { onEvent, onAsk, signal, toolAdapter } = options;
 
   // Handle invalid args
   if (!parsedArgs.ok) {
@@ -369,14 +379,13 @@ async function executeToolCall(
 
   let toolResult: ToolInvocationResult;
   try {
-    if (tool.provider === 'internal') {
-      toolResult = await dispatchInternalTool(tool.id, parsedInput, ctx);
-    } else if (tool.server) {
-      toolResult = await invokeBridgeTool(tool.server, tool.id, parsedInput, signal);
+    const adapter = toolAdapter ?? getToolAdapter(tool);
+    if (adapter) {
+      toolResult = await adapter.execute(tool.id, parsedInput, ctx, signal);
     } else {
       toolResult = {
         success: false,
-        error: `No provider available for tool: ${tool.id}`,
+        error: `No adapter available for tool: ${tool.id}`,
         durationMs: 0,
       };
     }
@@ -446,6 +455,7 @@ export async function runAgentChat(
     signal,
     maxIterations = 12,
     modelAdapter = defaultModelAdapter,
+    toolAdapter,
   } = options;
 
   let lastContent = '';
@@ -599,7 +609,7 @@ export async function runAgentChat(
             tool,
             parsedArgs,
             ctx,
-            { onEvent, onAsk, signal },
+            { onEvent, onAsk, signal, toolAdapter },
             agent,
           );
 

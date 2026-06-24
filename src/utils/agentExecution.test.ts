@@ -504,3 +504,346 @@ describe('error handling', () => {
     expect(result.content).toBe('');
   });
 });
+
+describe('runAgentChat (tool execution)', () => {
+  it('should execute tool calls and track events in order', async () => {
+    const events: string[] = [];
+    const toolCalls = [
+      {
+        id: 'call_test_1',
+        type: 'function' as const,
+        function: { name: 'vault.list_notes', arguments: '{}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Here are your notes.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    // Use a fake tool adapter that returns success
+    const fakeToolAdapter = {
+      execute: async (
+        toolId: string,
+        _input: Record<string, unknown>,
+        _ctx: import('../types').ToolExecutionContext,
+        _signal?: AbortSignal,
+      ): Promise<import('../types').ToolInvocationResult> => {
+        return {
+          success: true,
+          output: { notes: [], count: 0 },
+          durationMs: 10,
+        };
+      },
+      isAvailable: (_toolId: string): boolean => true,
+    };
+
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'List my notes', timestamp: Date.now() }],
+        prompt: 'List my notes',
+        notes: [], // Empty notes
+        onEvent: (event) => {
+          events.push(event.status);
+        },
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    // Events should be emitted: requested, then running, then succeeded
+    expect(events).toContain('requested');
+    expect(events).toContain('running');
+    expect(events).toContain('succeeded');
+    expect(events.indexOf('requested')).toBeLessThan(events.indexOf('running'));
+    expect(events.indexOf('running')).toBeLessThan(events.indexOf('succeeded'));
+  });
+
+  it('should execute tool calls and return structured output', async () => {
+    const toolCalls = [
+      {
+        id: 'call_test_2',
+        type: 'function' as const,
+        function: { name: 'vault.list_notes', arguments: '{"max_results": 5}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Found results.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    // Use a fake tool adapter that returns structured data
+    const fakeToolAdapter = {
+      execute: async (
+        toolId: string,
+        input: Record<string, unknown>,
+        _ctx: import('../types').ToolExecutionContext,
+        _signal?: AbortSignal,
+      ): Promise<import('../types').ToolInvocationResult> => {
+        return {
+          success: true,
+          output: {
+            notes: [
+              { title: 'Note 1', path: '/notes/note1.md' },
+              { title: 'Note 2', path: '/notes/note2.md' },
+            ],
+            count: 2,
+            toolId,
+            input,
+          },
+          durationMs: 10,
+        };
+      },
+      isAvailable: (_toolId: string): boolean => true,
+    };
+
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Search for test', timestamp: Date.now() }],
+        prompt: 'Search for test',
+        notes: [],
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    expect(result.transcript.length).toBeGreaterThan(0);
+    const toolRecord = result.transcript[0];
+    expect(toolRecord.output).toBeDefined();
+    if (toolRecord.output) {
+      const output = toolRecord.output as { notes?: unknown[]; count?: number };
+      expect(output.notes).toBeDefined();
+      expect(Array.isArray(output.notes)).toBe(true);
+      expect(output.count).toBe(2);
+    }
+  });
+
+  it('should handle tool execution failure', async () => {
+    const toolCalls = [
+      {
+        id: 'call_test_3',
+        type: 'function' as const,
+        function: { name: 'vault.list_notes', arguments: '{}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Tool will fail.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    // Use a fake tool adapter that always fails
+    const failingToolAdapter = {
+      execute: async (
+        _toolId: string,
+        _input: Record<string, unknown>,
+        _ctx: import('../types').ToolExecutionContext,
+        _signal?: AbortSignal,
+      ): Promise<import('../types').ToolInvocationResult> => {
+        return {
+          success: false,
+          error: 'Simulated tool failure: connection timeout',
+          durationMs: 5,
+        };
+      },
+      isAvailable: (_toolId: string): boolean => true,
+    };
+
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Use failing tool', timestamp: Date.now() }],
+        prompt: 'Use failing tool',
+        notes: [],
+        toolAdapter: failingToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    expect(result.transcript.length).toBeGreaterThan(0);
+    const toolRecord = result.transcript[0];
+    expect(toolRecord.error).toBe('Simulated tool failure: connection timeout');
+  });
+
+  it('should handle unknown tool gracefully', async () => {
+    const toolCalls = [
+      {
+        id: 'call_unknown',
+        type: 'function' as const,
+        function: { name: 'nonexistent.tool', arguments: '{}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Calling unknown tool.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    const events: import('../types').ToolLoopEvent[] = [];
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Use unknown tool', timestamp: Date.now() }],
+        prompt: 'Use unknown tool',
+        notes: [], // No tools available
+        onEvent: (event) => events.push(event),
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    // Should have a failed tool call in transcript
+    expect(result.transcript.length).toBeGreaterThan(0);
+    const toolRecord = result.transcript[0];
+    expect(toolRecord.error).toContain('not found');
+    expect(toolRecord.decision).toBe('deny');
+
+    // Should have a failed event
+    const failedEvent = events.find((e) => e.status === 'failed');
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent?.error).toContain('not found');
+  });
+
+  it('should handle MCP tool unavailable gracefully', async () => {
+    const toolCalls = [
+      {
+        id: 'call_mcp_unavailable',
+        type: 'function' as const,
+        function: { name: 'mcp::unavailable_server::tool', arguments: '{}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Calling MCP tool.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    const result = await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Use MCP tool', timestamp: Date.now() }],
+        prompt: 'Use MCP tool',
+        notes: [], // MCP tools won't be available without proper setup
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    // The tool should fail because MCP server is not available
+    expect(result.transcript.length).toBeGreaterThan(0);
+    const toolRecord = result.transcript[0];
+    // MCP tool execution should fail or be denied
+    expect(toolRecord.decision === 'deny' || toolRecord.error !== undefined).toBe(true);
+  });
+
+  it('should emit succeeded event when tool completes successfully', async () => {
+    const toolCalls = [
+      {
+        id: 'call_success',
+        type: 'function' as const,
+        function: { name: 'vault.list_notes', arguments: '{}' },
+      },
+    ];
+    const adapter = createFakeAdapter({
+      content: 'Tool succeeded.',
+      toolCalls,
+      finishReason: 'tool_calls',
+    });
+
+    const fakeToolAdapter = {
+      execute: async (
+        _toolId: string,
+        _input: Record<string, unknown>,
+        _ctx: import('../types').ToolExecutionContext,
+        _signal?: AbortSignal,
+      ): Promise<import('../types').ToolInvocationResult> => {
+        return {
+          success: true,
+          output: { message: 'Success!' },
+          durationMs: 5,
+        };
+      },
+      isAvailable: (_toolId: string): boolean => true,
+    };
+
+    const events: string[] = [];
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Use success tool', timestamp: Date.now() }],
+        prompt: 'Use success tool',
+        notes: [],
+        onEvent: (event) => {
+          events.push(event.status);
+        },
+        toolAdapter: fakeToolAdapter as import('../utils/toolAdapter').ToolAdapter,
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    expect(events).toContain('requested');
+    expect(events).toContain('running');
+    expect(events).toContain('succeeded');
+    // Verify order
+    expect(events.indexOf('requested')).toBeLessThan(events.indexOf('running'));
+    expect(events.indexOf('running')).toBeLessThan(events.indexOf('succeeded'));
+  });
+});
+
+describe('toolAdapter', () => {
+  it('should create fake adapter with custom options', async () => {
+    const { createFakeToolAdapter } = await import('../utils/toolAdapter');
+
+    // Test successful execution
+    const successAdapter = createFakeToolAdapter({
+      output: { data: 'test' },
+      delayMs: 10,
+    });
+    expect(successAdapter.isAvailable('any_tool')).toBe(true);
+    const successResult = await successAdapter.execute('test_tool', {}, {} as import('../types').ToolExecutionContext);
+    expect(successResult.success).toBe(true);
+    expect(successResult.output).toEqual({ toolId: 'test_tool', data: 'test' });
+
+    // Test failed execution
+    const failAdapter = createFakeToolAdapter({
+      shouldFail: true,
+      errorMessage: 'Custom error',
+    });
+    const failResult = await failAdapter.execute('fail_tool', {}, {} as import('../types').ToolExecutionContext);
+    expect(failResult.success).toBe(false);
+    expect(failResult.error).toBe('Custom error');
+  });
+
+  it('should check availability for internal tools', async () => {
+    const { internalToolAdapter } = await import('../utils/toolAdapter');
+    expect(internalToolAdapter.isAvailable('vault.list_notes')).toBe(true);
+    expect(internalToolAdapter.isAvailable('vault.read_note')).toBe(true);
+    expect(internalToolAdapter.isAvailable('nonexistent.tool')).toBe(false);
+  });
+
+  it('should identify MCP tools by prefix', async () => {
+    const { mcpToolAdapter } = await import('../utils/toolAdapter');
+    expect(mcpToolAdapter.isAvailable('mcp::server::tool')).toBe(true);
+    expect(mcpToolAdapter.isAvailable('internal::tool')).toBe(false);
+    expect(mcpToolAdapter.isAvailable('vault.list_notes')).toBe(false);
+  });
+});
