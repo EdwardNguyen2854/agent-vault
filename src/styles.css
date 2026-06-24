@@ -4647,6 +4647,30 @@ pre {
   margin-top: 2px;
 }
 
+/* Task row / card edit button */
+.task-row-action-btn,
+.task-card-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.task-row-action-btn:hover,
+.task-card-edit-btn:hover {
+  background: var(--surface-hover);
+  color: var(--primary);
+  border-color: var(--border);
+}
+
 .task-assign-wrap {
   position: relative;
   display: inline-flex;
@@ -5095,6 +5119,84 @@ pre {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+/* ============================================
+   TASK DETAIL MODAL
+   ============================================ */
+.task-detail-modal {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.task-detail-text {
+  padding: var(--space-3);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.task-detail-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.task-detail-source-note {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.task-detail-source-line {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.task-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  max-width: fit-content;
+}
+
+.task-detail-toggle:hover {
+  border-color: var(--primary);
+}
+
+.task-detail-toggle.completed {
+  color: var(--positive);
+  border-color: var(--positive);
+  border-color: color-mix(in srgb, var(--positive) 40%, var(--border));
+  background: var(--positive-soft);
+}
+
+.task-detail-toggle.active {
+  color: var(--text);
+}
+
+.task-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.task-detail-id {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  word-break: break-all;
 }
 
 .task-due-pill {

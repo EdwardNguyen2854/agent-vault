@@ -405,6 +405,92 @@ export function updateTaskCompletion(
   return content;
 }
 
+/**
+ * Rebuild a task line in markdown content with updated properties.
+ * Strips existing @assignee, due:YYYY-MM-DD, priority:x from the text,
+ * preserves the clean description and tags, then appends the new values.
+ */
+export function updateTaskLine(
+  content: string,
+  lineNumber: number,
+  updates: {
+    completed?: boolean;
+    assignee?: string | null;
+    due?: string | null;
+    priority?: string | null;
+  },
+  fallbackTaskText?: string,
+): string {
+  const lines = content.split('\n');
+  const taskLineRegex = /^(\s*-\s+\[)([ xX])(\]\s+)(.+)$/;
+  const assigneeRegex = /(^|\s)@([\p{L}\p{N}_-]+)/u;
+  const dueRegex = /\bdue:\d{4}-\d{2}-\d{2}\b/i;
+  const priorityRegex = /\bpriority:(high|medium|low)\b/i;
+
+  const rewrite = (index: number): boolean => {
+    const original = lines[index];
+    const match = original.match(taskLineRegex);
+    if (!match) return false;
+    const indent = match[1]; // e.g. "- ["
+    const checkbox = match[2]; // " " or "x"
+    const separator = match[3]; // "] "
+    const fullText = match[4];
+
+    const newCheckbox =
+      updates.completed !== undefined ? (updates.completed ? 'x' : ' ') : checkbox;
+
+    // Strip existing metadata from text, preserving tags
+    let clean = fullText
+      .replace(assigneeRegex, '')
+      .replace(dueRegex, '')
+      .replace(priorityRegex, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Rebuild with new metadata
+    const parts: string[] = [clean];
+
+    if (updates.assignee) {
+      const safe = updates.assignee.replace(/[^\p{L}\p{N}_-]/gu, '').trim();
+      if (safe) parts.push(`@${safe}`);
+    }
+
+    if (updates.due) {
+      // Validate YYYY-MM-DD format roughly
+      if (/^\d{4}-\d{2}-\d{2}$/.test(updates.due)) {
+        parts.push(`due:${updates.due}`);
+      }
+    }
+
+    if (updates.priority) {
+      const p = updates.priority.toLowerCase();
+      if (p === 'high' || p === 'medium' || p === 'low') {
+        parts.push(`priority:${p}`);
+      }
+    }
+
+    lines[index] = `${indent}${newCheckbox}${separator}${parts.join(' ')}`;
+    return true;
+  };
+
+  if (lineNumber >= 1 && lineNumber <= lines.length) {
+    if (rewrite(lineNumber - 1)) return lines.join('\n');
+  }
+
+  if (fallbackTaskText) {
+    const taskTextLower = fallbackTaskText.toLowerCase();
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.match(taskLineRegex)) continue;
+      if (line.toLowerCase().includes(taskTextLower)) {
+        if (rewrite(i)) return lines.join('\n');
+      }
+    }
+  }
+
+  return content;
+}
+
 export function updateTaskAssignee(
   content: string,
   lineNumber: number,
