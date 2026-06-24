@@ -66,6 +66,7 @@ import {
 } from './utils/vaultRegistry';
 import type { SavedVault } from './utils/vaultRegistry';
 import { getNoteKey } from './utils/noteKey';
+import { Supergraphic } from './components/Supergraphic';
 import { CommandCenter } from './components/CommandCenter';
 import { Dashboard } from './components/Dashboard';
 import { EditorPane } from './components/EditorPane';
@@ -2893,6 +2894,7 @@ imported: ${new Date().toISOString()}
       className={`app-shell${chatVisible && chatSettings.layout === 'docked' && view === 'editor' ? ' chat-docked-open' : ''}`}
       style={{ '--chat-width': `${chatSettings.dockedWidth}px` } as CSSProperties}
     >
+      <Supergraphic />
       <TopBar
         vaultName={vaultName}
         dirty={dirty}
