@@ -78,6 +78,7 @@ interface FileTreeProps {
   onDeleteFolder?: (folderPath: string) => void;
   visible?: boolean;
   expandAll?: boolean;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 interface TreeNode {
@@ -409,6 +410,7 @@ export function FileTree({
   onDeleteFolder,
   visible = true,
   expandAll = true,
+  searchInputRef,
 }: FileTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() =>
     expandAll ? new Set() : loadCollapsedSet(),
@@ -696,6 +698,7 @@ export function FileTree({
       <div className="file-tree-search">
         <Search size={12} aria-hidden="true" />
         <input
+          ref={searchInputRef}
           type="search"
           value={search}
           onChange={(event) => onSearchChange?.(event.target.value)}
