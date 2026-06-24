@@ -54,6 +54,7 @@ export interface VaultFolder {
   vaultRole: 'agent' | 'personal' | 'shared';
   readOnly: boolean;
   path: string;
+  tags: string[];
 }
 
 export interface VaultNote extends VaultFile {

@@ -1252,6 +1252,30 @@ kbd {
   color: var(--primary);
 }
 
+.context-menu-divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border-light);
+}
+
+.folder-tag-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: opacity var(--transition-fast);
+}
+
+.folder-row:hover .folder-tag-badge {
+  opacity: 1;
+}
+
 /* ============================================
    VIEW CONTAINERS
    ============================================ */
@@ -5537,6 +5561,95 @@ pre {
 
 .tag-highlight {
   color: var(--primary);
+}
+
+/* Entity type badges in TagsView */
+.entity-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+}
+
+.entity-type-badge.note {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.entity-type-badge.folder {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+}
+
+.entity-type-badge.vault {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.entity-type-badge.file {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+/* Entity tag filter bar */
+.tag-entity-filter {
+  display: flex;
+  gap: 4px;
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.tag-entity-filter .ghost-button {
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+.tag-note-list .entity-name {
+  font-size: 10px;
+  color: var(--muted);
+  display: block;
+}
+
+/* Tag editor dialog */
+.tag-editor-dialog {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 320px;
+  max-width: 90vw;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.tag-editor-dialog h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tag-editor-dialog .field-group {
+  margin-bottom: var(--space-3);
+}
+
+.tag-editor-dialog .dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 /* ============================================

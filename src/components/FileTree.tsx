@@ -13,6 +13,7 @@ import {
   Home,
   MousePointer2,
   Search,
+  Tag,
   Trash2,
   Users,
   X,
@@ -76,6 +77,7 @@ interface FileTreeProps {
   onCreateFolder?: (parentPath: string) => void;
   onRenameFolder?: (folderPath: string) => void;
   onDeleteFolder?: (folderPath: string) => void;
+  onEditFolderTags?: (vaultId: string, folderPath: string, currentTags: string[]) => void;
   visible?: boolean;
   expandAll?: boolean;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
@@ -88,6 +90,7 @@ interface TreeNode {
   vaultId?: string;
   folderPath?: string;
   readOnly?: boolean;
+  tags: string[];
   children: TreeNode[];
   notes: VaultNote[];
   folderNote?: VaultNote;
@@ -112,7 +115,7 @@ function getVaultRoleLabel(role?: VaultNote['vaultRole']): string | null {
 
 function ensureVaultNode(
   root: TreeNode[],
-  source: Pick<VaultFolder, 'vaultId' | 'vaultName' | 'vaultRole' | 'readOnly'>,
+  source: Pick<VaultFolder, 'vaultId' | 'vaultName' | 'vaultRole' | 'readOnly' | 'tags'>,
 ): TreeNode {
   const vaultPath = `vault:${source.vaultId}`;
   let vaultNode = root.find((node) => node.path === vaultPath);
@@ -124,6 +127,7 @@ function ensureVaultNode(
       vaultId: source.vaultId,
       folderPath: '',
       readOnly: source.readOnly,
+      tags: source.tags ?? [],
       children: [],
       notes: [],
     };
@@ -134,7 +138,7 @@ function ensureVaultNode(
 
 function ensureFolderNode(
   parent: TreeNode,
-  folder: Pick<VaultFolder, 'vaultId' | 'readOnly'>,
+  folder: Pick<VaultFolder, 'vaultId' | 'readOnly' | 'tags'>,
   parts: string[],
   index: number,
 ): TreeNode {
@@ -148,6 +152,7 @@ function ensureFolderNode(
       vaultId: folder.vaultId,
       folderPath,
       readOnly: folder.readOnly,
+      tags: folder.tags ?? [],
       children: [],
       notes: [],
     };
@@ -158,6 +163,18 @@ function ensureFolderNode(
 
 function buildTree(notes: VaultNote[], folders: VaultFolder[]): TreeNode[] {
   const root: TreeNode[] = [];
+
+  // Build a lookup of folder-path → tags for fast merging
+  const folderTagsByVault = new Map<string, Map<string, string[]>>();
+  for (const folder of folders) {
+    if (!folder.path) continue;
+    let vaultMap = folderTagsByVault.get(folder.vaultId);
+    if (!vaultMap) {
+      vaultMap = new Map();
+      folderTagsByVault.set(folder.vaultId, vaultMap);
+    }
+    vaultMap.set(folder.path.toLowerCase(), folder.tags ?? []);
+  }
 
   for (const folder of folders) {
     const parts = folder.path.split('/').filter(Boolean);
@@ -208,6 +225,17 @@ function buildTree(notes: VaultNote[], folders: VaultFolder[]): TreeNode[] {
       const part = parts[i];
       let node = currentParent.children.find((n) => n.name === part);
       if (!node) node = ensureFolderNode(currentParent, note, parts, i);
+
+      // Merge folder tags from the lookup if available
+      const vaultTags = folderTagsByVault.get(note.vaultId);
+      if (vaultTags && node.tags.length === 0) {
+        const nodeFolderPath = parts.slice(0, i + 1).join('/').toLowerCase();
+        const foundTags = vaultTags.get(nodeFolderPath);
+        if (foundTags && foundTags.length > 0) {
+          node.tags = foundTags;
+        }
+      }
+
       if (isFolderNote && i === parts.length - 2) {
         node.folderNote = note;
       }
@@ -220,6 +248,7 @@ function buildTree(notes: VaultNote[], folders: VaultFolder[]): TreeNode[] {
         path: getNoteKey(note),
         vaultId: note.vaultId,
         readOnly: note.readOnly,
+        tags: [],
         children: [],
         notes: [note],
       });
@@ -280,6 +309,7 @@ interface TreeItemProps {
   onFolderContextMenu: (node: TreeNode, event: React.MouseEvent<HTMLElement>) => void;
   onHoverStart: (note: VaultNote, element: HTMLElement) => void;
   onHoverEnd: () => void;
+  onEditFolderTags?: (vaultId: string, folderPath: string, currentTags: string[]) => void;
 }
 
 function TreeItem({
@@ -293,16 +323,18 @@ function TreeItem({
   onFolderContextMenu,
   onHoverStart,
   onHoverEnd,
+  onEditFolderTags,
 }: TreeItemProps) {
   const isCollapsed = collapsed.has(node.path);
   const hasFolderNote = Boolean(node.folderNote);
   const isFolderActive = hasFolderNote && selectedPath === getNoteKey(node.folderNote!);
-  const hasFolderRow = node.children.length > 0 || hasFolderNote;
+  const hasFolderRow = node.children.length > 0 || hasFolderNote || node.tags.length > 0;
   const isVaultRow = Boolean(node.vaultRole);
   const vaultRoleLabel = getVaultRoleLabel(node.vaultRole);
   const childLevel = level + (hasFolderRow ? 1 : 0);
   const folderPadding = TREE_BASE_INDENT + level * TREE_LEVEL_INDENT;
   const notePadding = TREE_BASE_INDENT + level * TREE_LEVEL_INDENT + TREE_LABEL_OFFSET;
+  const hasTags = node.tags.length > 0;
 
   return (
     <div>
@@ -333,6 +365,11 @@ function TreeItem({
           <span className="folder-name">{node.name}</span>
           {vaultRoleLabel && (
             <span className={`vault-type-badge ${node.vaultRole}`}>{vaultRoleLabel}</span>
+          )}
+          {hasTags && (
+            <span className="folder-tag-badge" title={node.tags.map((t) => `#${t}`).join(', ')}>
+              <Tag size={8} />
+            </span>
           )}
           <span className="note-count">
             {node.children.reduce((acc, c) => acc + c.notes.length, 0) + node.notes.length}
@@ -368,6 +405,7 @@ function TreeItem({
             onFolderContextMenu={onFolderContextMenu}
             onHoverStart={onHoverStart}
             onHoverEnd={onHoverEnd}
+            onEditFolderTags={onEditFolderTags}
           />
         ))}
     </div>
@@ -408,6 +446,7 @@ export function FileTree({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  onEditFolderTags,
   visible = true,
   expandAll = true,
   searchInputRef,
@@ -747,6 +786,7 @@ export function FileTree({
             onFolderContextMenu={handleFolderContextMenu}
             onHoverStart={handleHoverStart}
             onHoverEnd={handleHoverEnd}
+            onEditFolderTags={onEditFolderTags}
           />
         ))}
       </div>
@@ -929,6 +969,24 @@ export function FileTree({
               Delete folder
             </button>
           )}
+          <div className="context-menu-divider" />
+          <button
+            type="button"
+            className="note-context-menu-item"
+            role="menuitem"
+            disabled={contextMenu.node.readOnly}
+            onClick={() => {
+              closeContextMenu();
+              onEditFolderTags?.(
+                contextMenu.node.vaultId ?? '',
+                contextMenu.node.folderPath ?? '',
+                contextMenu.node.tags,
+              );
+            }}
+          >
+            <Tag size={13} />
+            Edit tags
+          </button>
         </div>
       )}
       <div className="file-tree-resize-handle" onMouseDown={handleResizeStart} />

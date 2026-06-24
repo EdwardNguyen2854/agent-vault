@@ -66,6 +66,15 @@ import {
 } from './utils/vaultRegistry';
 import type { SavedVault } from './utils/vaultRegistry';
 import { getNoteKey } from './utils/noteKey';
+import {
+  loadEntityTags,
+  saveEntityTags,
+  applyFolderTags,
+  getVaultTaggedEntities,
+  getFileTaggedEntities,
+  emptyManifest,
+} from './utils/entityTags';
+import type { EntityTagsManifest, TaggedEntity } from './utils/entityTags';
 import { Supergraphic } from './components/Supergraphic';
 import { CommandCenter } from './components/CommandCenter';
 import { Dashboard } from './components/Dashboard';
@@ -269,6 +278,7 @@ export default function App() {
   const starterVaults = useMemo<StarterVaultTemplate[]>(() => getStarterVaultTemplates(), []);
   const [notes, setNotes] = useState<VaultNote[]>([]);
   const [folders, setFolders] = useState<VaultFolder[]>([]);
+  const [entityTagsData, setEntityTagsData] = useState<Record<string, EntityTagsManifest>>({});
   const [selectedKey, setSelectedKey] = useState<string | undefined>();
   const [view, setView] = useState<ViewMode>(() => loadPreferences().view);
   const [editorMode, setEditorMode] = useState<EditorMode>(() => loadPreferences().editorMode);
@@ -281,6 +291,12 @@ export default function App() {
     open: boolean;
   }>({ mode: 'create', open: false });
   const [noteActionTarget, setNoteActionTarget] = useState<VaultNote | undefined>();
+  const [tagEditorState, setTagEditorState] = useState<{
+    open: boolean;
+    vaultId: string;
+    folderPath: string;
+    currentTags: string[];
+  }>({ open: false, vaultId: '', folderPath: '', currentTags: [] });
   const [createNoteFolder, setCreateNoteFolder] = useState('');
   const [pendingCreateVaultId, setPendingCreateVaultId] = useState<string | null>(null);
   const [pendingRenameVaultId, setPendingRenameVaultId] = useState<string | null>(null);
@@ -1838,6 +1854,43 @@ export default function App() {
       }
     },
     [personalVaults, notes, selectedNote],
+  );
+
+  const handleEditFolderTags = useCallback(
+    (vaultId: string, folderPath: string, currentTags: string[]) => {
+      setTagEditorState({ open: true, vaultId, folderPath, currentTags });
+    },
+    [],
+  );
+
+  const handleSaveFolderTags = useCallback(
+    async (tags: string[]) => {
+      const { vaultId, folderPath } = tagEditorState;
+      if (!vaultId) return;
+      setTagEditorState((prev) => ({ ...prev, open: false }));
+
+      const mounted = getMountedVault(vaultId);
+      if (!mounted) return;
+
+      const manifest = entityTagsData[vaultId] ?? emptyManifest();
+      const cleaned = tags.map((t) => t.trim()).filter(Boolean);
+
+      if (cleaned.length > 0) {
+        manifest.folders[folderPath] = cleaned;
+      } else {
+        delete manifest.folders[folderPath];
+      }
+
+      try {
+        await saveEntityTags(mounted.handle, manifest);
+        setEntityTagsData((prev) => ({ ...prev, [vaultId]: manifest }));
+        setStatus(`Updated tags for folder "${folderPath}".`);
+      } catch (error) {
+        console.error('Failed to save folder tags:', error);
+        setStatus('Could not save folder tags.');
+      }
+    },
+    [tagEditorState, entityTagsData, getMountedVault],
   );
 
   const openNoteInDefaultApp = useCallback(async (note: VaultNote) => {

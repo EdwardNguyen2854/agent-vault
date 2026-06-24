@@ -86,32 +86,43 @@ export function canWriteVaultNote(note?: VaultNote | null): boolean {
 export function deriveVaultFolders(notes: VaultNote[], sources: VaultSource[] = []): VaultFolder[] {
   const folders = new Map<string, VaultFolder>();
 
+  type FolderSource = Pick<VaultFolder, 'vaultId' | 'vaultName' | 'vaultRole' | 'readOnly'>;
+
+  const makeFolder = (src: FolderSource, path: string): VaultFolder => ({
+    vaultId: src.vaultId,
+    vaultName: src.vaultName,
+    vaultRole: src.vaultRole,
+    readOnly: src.readOnly,
+    path,
+    tags: [],
+  });
+
   for (const source of sources) {
-    folders.set(`${source.id}:`, {
-      vaultId: source.id,
-      vaultName: source.name,
-      vaultRole: source.role,
-      readOnly: source.readOnly,
-      path: '',
-    });
+    folders.set(
+      `${source.id}:`,
+      makeFolder(
+        { vaultId: source.id, vaultName: source.name, vaultRole: source.role, readOnly: source.readOnly },
+        '',
+      ),
+    );
   }
 
   for (const note of notes) {
-    const source = {
+    const src: FolderSource = {
       vaultId: note.vaultId,
       vaultName: note.vaultName,
       vaultRole: note.vaultRole,
       readOnly: note.readOnly,
     };
-    folders.set(`${note.vaultId}:`, { ...source, path: '' });
+    folders.set(`${note.vaultId}:`, makeFolder(src, ''));
 
     const parts = note.path.split('/').filter(Boolean);
     for (let i = 0; i < parts.length - 1; i++) {
       const path = parts.slice(0, i + 1).join('/');
-      folders.set(`${note.vaultId}:${path.toLowerCase()}`, {
-        ...source,
-        path,
-      });
+      const key = `${note.vaultId}:${path.toLowerCase()}`;
+      if (!folders.has(key)) {
+        folders.set(key, makeFolder(src, path));
+      }
     }
   }
 
