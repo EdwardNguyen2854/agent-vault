@@ -1,3 +1,17 @@
+/**
+ * Security notes for markdown rendering (Agent Vault):
+ *
+ * XSS Prevention:
+ * - All markdown rendering uses DOMPurify.sanitize() to strip malicious HTML/scripts
+ * - renderMarkdownToHtml() and renderBlockToHtml() forbid: script, style, iframe, form, object, embed
+ * - All event handler attributes are forbidden: onerror, onload, onclick, onmouseover, onfocus, onblur
+ * - Wiki link targets are escaped via escapeHtmlAttribute() before insertion into data-wikilink
+ * - Chat content uses renderChatMarkdownToHtml() with stricter FORBID_TAGS/FORBID_ATTR
+ *
+ * Limitations:
+ * - Mermaid diagrams rendered through Excalidraw may have sanitization gaps in older versions
+ *   of @excalidraw/excalidraw due to React 19 peer dependency constraints (tracked separately)
+ */
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import type { BacklinkItem, GraphData, HeadingItem, TaskItem, VaultNote, WikiLink } from '../types';
@@ -554,9 +568,12 @@ export function renderMarkdownToHtml(content: string): string {
     },
   );
   const html = marked.parse(withWikiAnchors, { async: false }) as string;
+  // Security: deliberately does NOT add iframe to ALLOWED_TAGS — iframes introduce
+  // clickjacking risk and are not needed for vault note rendering.
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'data-wikilink', 'src', 'alt'],
-    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['target', 'data-wikilink'],
+    FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
   });
 }
 
@@ -666,9 +683,11 @@ export function renderBlockToHtml(raw: string): string {
     return `<a class="wiki-link" href="#" data-wikilink="${escapeHtmlAttribute(target)}">${escapeHtmlAttribute(label)}</a>`;
   });
   const html = marked.parse(withWikiAnchors, { async: false }) as string;
+  // Security: same restrictions as renderMarkdownToHtml — no iframe, no event handlers.
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'data-wikilink', 'src', 'alt'],
-    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['target', 'data-wikilink'],
+    FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
   });
 }
 
