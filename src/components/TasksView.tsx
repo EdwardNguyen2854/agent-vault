@@ -8,6 +8,7 @@ import {
   List,
   Loader2,
   MessageCirclePlus,
+  Pencil,
   Search,
   Tag,
   Table2,
@@ -21,10 +22,11 @@ import type {
   TaskItem,
   VaultNote,
 } from '../types';
-import { updateTaskAssignee, updateTaskCompletion } from '../utils/markdown';
+import { updateTaskAssignee, updateTaskCompletion, updateTaskLine } from '../utils/markdown';
 import { getNoteKey } from '../utils/noteKey';
 import { canWriteVaultNote, writeNote } from '../utils/vault';
 import { loadTasksView, saveTasksView, type TasksViewMode } from '../utils/preferences';
+import { TaskDetailModal } from './TaskDetailModal';
 
 interface TasksViewProps {
   notes: VaultNote[];
@@ -167,6 +169,7 @@ export function TasksView({
   const [togglingTask, setTogglingTask] = useState<string | null>(null);
   const [assigningTask, setAssigningTask] = useState<string | null>(null);
   const [savingAssignTask, setSavingAssignTask] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const [quickFilters, setQuickFilters] = useState<Set<QuickFilter>>(new Set());
   const [viewMode, setViewMode] = useState<TasksViewMode>(() => loadTasksView());
@@ -290,6 +293,25 @@ export function TasksView({
     }
   };
 
+  const handleTaskDetailUpdate = async (
+    task: TaskItem,
+    updates: { completed?: boolean; assignee?: string | null; due?: string | null; priority?: string | null },
+  ) => {
+    const note = notes.find((n) => getNoteKey(n) === task.noteKey);
+    if (!note) return;
+    if (!canWriteVaultNote(note)) {
+      alert('This task belongs to Agent or Shared content. Only personal vault tasks can be edited.');
+      return;
+    }
+    const nextContent = updateTaskLine(note.content, task.line, updates, task.text);
+    if (nextContent === note.content) {
+      alert('Could not locate the task line to edit. The note may have been edited elsewhere.');
+      return;
+    }
+    await writeTaskMutation(task, nextContent, 'toggle', 'Failed to save task update.');
+    setEditingTask(null);
+  };
+
   const handleTaskToggle = async (task: TaskItem, currentCompleted: boolean) => {
     const note = notes.find((n) => getNoteKey(n) === task.noteKey);
     if (!note) return;
@@ -361,6 +383,7 @@ export function TasksView({
       onOpenConversation={onOpenTaskConversation}
       onSelect={onSelectNote}
       onOpenAgentsView={onOpenAgentsView}
+      onOpenTaskDetail={(task) => setEditingTask(task)}
       conversation={taskConversations[task.id]}
       globalBusyState={agentBusyState}
       activeAgentSessionId={activeAgentSessionId}
@@ -368,6 +391,7 @@ export function TasksView({
   );
 
   return (
+    <>
     <main className="page-scroll view-page">
       <div className="page-header">
         <div>
@@ -625,6 +649,7 @@ export function TasksView({
                       onOpenConversation={onOpenTaskConversation}
                       onSelect={onSelectNote}
                       onOpenAgentsView={onOpenAgentsView}
+                      onOpenTaskDetail={(task) => setEditingTask(task)}
                       conversation={taskConversations[task.id]}
                       globalBusyState={agentBusyState}
                       activeAgentSessionId={activeAgentSessionId}
@@ -820,7 +845,14 @@ export function TasksView({
         </div>
       )}
     </main>
-  );
+    {editingTask && (
+      <TaskDetailModal
+        task={editingTask}
+        onClose={() => setEditingTask(null)}
+        onTaskUpdate={handleTaskDetailUpdate}
+      />
+    )}
+  </>);
 }
 
 interface TaskRowProps {
@@ -837,6 +869,7 @@ interface TaskRowProps {
   onOpenConversation: (task: TaskItem) => void;
   onSelect: (path: string) => void;
   onOpenAgentsView: () => void;
+  onOpenTaskDetail: (task: TaskItem) => void;
   conversation?: TaskConversationMeta;
   globalBusyState: ChatAgentBusyState;
   activeAgentSessionId: string | null;
@@ -856,6 +889,7 @@ function TaskRow({
   onOpenConversation,
   onSelect,
   onOpenAgentsView,
+  onOpenTaskDetail,
   conversation,
   globalBusyState,
   activeAgentSessionId,
@@ -875,6 +909,7 @@ function TaskRow({
       onOpenConversation={onOpenConversation}
       onSelect={onSelect}
       onOpenAgentsView={onOpenAgentsView}
+      onOpenTaskDetail={onOpenTaskDetail}
       conversation={conversation}
       globalBusyState={globalBusyState}
       activeAgentSessionId={activeAgentSessionId}
@@ -889,6 +924,7 @@ function KanbanCard(props: TaskRowProps) {
 
 interface TaskCardProps extends TaskRowProps {
   variant: 'row' | 'kanban';
+  onOpenTaskDetail: (task: TaskItem) => void;
 }
 
 function TaskCard({
@@ -905,6 +941,7 @@ function TaskCard({
   onOpenConversation,
   onSelect,
   onOpenAgentsView,
+  onOpenTaskDetail,
   conversation,
   globalBusyState,
   activeAgentSessionId,
@@ -1057,6 +1094,18 @@ function TaskCard({
         )}
       </div>
       <div className="task-row-actions" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="task-row-action-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenTaskDetail(task);
+          }}
+          title="Edit task properties"
+          aria-label="Edit task properties"
+        >
+          <Pencil size={11} />
+        </button>
         <div className="task-assign-wrap" ref={popoverRef}>
           <button
             type="button"

@@ -1,12 +1,16 @@
-import { Bot, Calendar, CheckCircle2, ExternalLink, Flag, Play, Search, X } from 'lucide-react';
+import { Bot, Calendar, CheckCircle2, ExternalLink, Flag, Pencil, Play, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { TaskItem, VaultNote } from '../types';
 import { getNoteKey } from '../utils/noteKey';
+import { updateTaskLine } from '../utils/markdown';
+import { canWriteVaultNote, writeNote } from '../utils/vault';
+import { TaskDetailModal } from './TaskDetailModal';
 
 interface TaskQueueProps {
   notes: VaultNote[];
   onSelectNote: (key: string) => void;
   onRunAgent: (task: TaskItem, agent: VaultNote) => void;
+  onNotesChange: (notes: VaultNote[]) => void;
 }
 
 type StatusFilter = 'all' | 'todo' | 'doing' | 'done';
@@ -16,8 +20,10 @@ interface TaskGroupProps {
   agentName: string;
   agentNote: VaultNote | null;
   tasks: TaskItem[];
+  notes: VaultNote[];
   onSelectNote: (key: string) => void;
   onRunAgent: (task: TaskItem, agent: VaultNote) => void;
+  onNotesChange: (notes: VaultNote[]) => void;
 }
 
 function getPriorityValue(priority: string | undefined): number {
@@ -61,12 +67,17 @@ function TaskCard({
   onSelectNote,
   onRunAgent,
   agentNote,
+  notes,
+  onNotesChange,
 }: {
   task: TaskItem;
   onSelectNote: (key: string) => void;
   onRunAgent: (task: TaskItem, agent: VaultNote) => void;
   agentNote: VaultNote | null;
+  notes: VaultNote[];
+  onNotesChange: (notes: VaultNote[]) => void;
 }) {
+  const [showDetail, setShowDetail] = useState(false);
   const priorityMatch = task.text.match(/\bpriority:(high|medium|low)\b/i)?.[1];
   const dueMatch = task.text.match(/\bdue:(\d{4}-\d{2}-\d{2})\b/i)?.[1];
 
@@ -82,44 +93,90 @@ function TaskCard({
     }
   };
 
+  const handleTaskUpdate = async (
+    updatedTask: TaskItem,
+    updates: { completed?: boolean; assignee?: string | null; due?: string | null; priority?: string | null },
+  ) => {
+    const note = notes.find((n) => getNoteKey(n) === updatedTask.noteKey);
+    if (!note) return;
+    if (!canWriteVaultNote(note)) {
+      alert('This task belongs to Agent or Shared content. Only personal vault tasks can be edited.');
+      return;
+    }
+    const nextContent = updateTaskLine(note.content, updatedTask.line, updates, updatedTask.text);
+    if (nextContent === note.content) {
+      alert('Could not locate the task line to edit. The note may have been edited elsewhere.');
+      return;
+    }
+    try {
+      const updated = await writeNote(note, nextContent);
+      onNotesChange(notes.map((n) => (getNoteKey(n) === getNoteKey(updated) ? updated : n)));
+    } catch (error) {
+      console.error('Failed to save task update:', error);
+      alert('Failed to save task update. The file may be locked or permissions denied.');
+    }
+  };
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowDetail(true);
+  };
+
   return (
-    <article className={`task-card ${task.completed ? 'task-completed' : ''}`}>
-      <div className="task-card-main">
-        <StatusIndicator completed={task.completed} />
-        <div className="task-content">
-          <p className="task-text">{task.text}</p>
-          <div className="task-meta">
-            {dueMatch && (
-              <span className="task-due">
-                <Calendar size={10} />
-                {dueMatch}
-              </span>
-            )}
-            <PriorityBadge priority={priorityMatch} />
-            <button className="task-source-link" onClick={handleOpenNote} title={task.notePath}>
-              <ExternalLink size={10} />
-              {task.noteTitle}
-            </button>
+    <>
+      <article className={`task-card ${task.completed ? 'task-completed' : ''}`}>
+        <div className="task-card-main">
+          <StatusIndicator completed={task.completed} />
+          <div className="task-content" onClick={handleEditClick}>
+            <p className="task-text">{task.text}</p>
+            <div className="task-meta">
+              {dueMatch && (
+                <span className="task-due">
+                  <Calendar size={10} />
+                  {dueMatch}
+                </span>
+              )}
+              <PriorityBadge priority={priorityMatch} />
+              <button className="task-source-link" onClick={handleOpenNote} title={task.notePath}>
+                <ExternalLink size={10} />
+                {task.noteTitle}
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
-      {agentNote && !task.completed && (
-        <div className="task-actions">
           <button
-            className="run-agent-btn"
-            onClick={handleRunAgent}
-            title={`Run ${agentNote.title} on this task`}
+            className="task-card-edit-btn"
+            onClick={handleEditClick}
+            title="Edit task properties"
+            aria-label="Edit task properties"
           >
-            <Play size={11} />
-            Run Agent
+            <Pencil size={11} />
           </button>
         </div>
+        {agentNote && !task.completed && (
+          <div className="task-actions">
+            <button
+              className="run-agent-btn"
+              onClick={handleRunAgent}
+              title={`Run ${agentNote.title} on this task`}
+            >
+              <Play size={11} />
+              Run Agent
+            </button>
+          </div>
+        )}
+      </article>
+      {showDetail && (
+        <TaskDetailModal
+          task={task}
+          onClose={() => setShowDetail(false)}
+          onTaskUpdate={handleTaskUpdate}
+        />
       )}
-    </article>
+    </>
   );
 }
 
-function TaskGroup({ agentName, agentNote, tasks, onSelectNote, onRunAgent }: TaskGroupProps) {
+function TaskGroup({ agentName, agentNote, tasks, onSelectNote, onRunAgent, notes, onNotesChange }: TaskGroupProps) {
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
       if (a.completed !== b.completed) return a.completed ? 1 : -1;
@@ -152,21 +209,23 @@ function TaskGroup({ agentName, agentNote, tasks, onSelectNote, onRunAgent }: Ta
         )}
       </div>
       <div className="task-group-tasks">
-        {sortedTasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            onSelectNote={onSelectNote}
-            onRunAgent={onRunAgent}
-            agentNote={agentNote}
-          />
-        ))}
+          {sortedTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onSelectNote={onSelectNote}
+              onRunAgent={onRunAgent}
+              agentNote={agentNote}
+              notes={notes}
+              onNotesChange={onNotesChange}
+            />
+          ))}
       </div>
     </section>
   );
 }
 
-export function TaskQueue({ notes, onSelectNote, onRunAgent }: TaskQueueProps) {
+export function TaskQueue({ notes, onSelectNote, onRunAgent, onNotesChange }: TaskQueueProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -353,8 +412,10 @@ export function TaskQueue({ notes, onSelectNote, onRunAgent }: TaskQueueProps) {
                 agentName={agentName}
                 agentNote={agentNote}
                 tasks={tasks}
+                notes={notes}
                 onSelectNote={onSelectNote}
                 onRunAgent={onRunAgent}
+                onNotesChange={onNotesChange}
               />
             ))}
           </div>
