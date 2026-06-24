@@ -338,11 +338,12 @@ export interface AgentRun {
 // Chat Related Types
 export interface ChatAttachment {
   id: string;
-  kind: 'image';
+  kind: 'image' | 'file';
   name: string;
-  mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+  mimeType: string;
   size: number;
   dataUrl: string;
+  textContent?: string;
 }
 
 export interface ChatMessage {

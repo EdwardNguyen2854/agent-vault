@@ -372,14 +372,27 @@ function formatListNotesOutput(output: unknown): string {
 
 const MAX_TEXTAREA_ROWS = 8;
 const LINE_HEIGHT_PX = 20;
+const MAX_FILE_ATTACHMENTS = 10;
 const MAX_IMAGE_ATTACHMENTS = 4;
+const MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024;
 const MAX_IMAGE_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-const ACCEPTED_IMAGE_MIME_TYPES = new Set<ChatAttachment['mimeType']>([
+const ACCEPTED_IMAGE_MIME_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/webp',
+  'image/gif',
 ]);
-const ACCEPTED_IMAGE_INPUT = 'image/png,image/jpeg,image/webp';
+const ACCEPTED_TEXT_MIME_TYPES = new Set([
+  'text/markdown',
+  'text/plain',
+  'text/csv',
+  'application/json',
+  'application/x-yaml',
+  'text/yaml',
+  'text/x-yaml',
+]);
+const TEXT_EXTENSIONS = new Set(['md', 'txt', 'json', 'csv', 'yaml', 'yml']);
+const ACCEPTED_INPUT_TYPES = 'image/png,image/jpeg,image/webp,image/gif,.md,.txt,.json,.csv,.yaml,.yml';
 const SECRET_PATTERN =
   /\b(api[_-]?key|secret|token|password|passwd|private[_-]?key|authorization|bearer|credential)\b/i;
 
@@ -411,8 +424,17 @@ function autoSizeTextarea(el: HTMLTextAreaElement) {
   el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
 }
 
-function isAcceptedImageMimeType(type: string): type is ChatAttachment['mimeType'] {
-  return ACCEPTED_IMAGE_MIME_TYPES.has(type as ChatAttachment['mimeType']);
+function isAcceptedImageMimeType(type: string): boolean {
+  return ACCEPTED_IMAGE_MIME_TYPES.has(type);
+}
+
+function isTextExtension(ext: string): boolean {
+  return TEXT_EXTENSIONS.has(ext.toLowerCase());
+}
+
+function getFileExtension(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
 function formatFileSize(bytes: number): string {
@@ -539,6 +561,10 @@ export function ChatPanel({
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [viewingAttachment, setViewingAttachment] = useState<ChatAttachment | null>(null);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [showFileMention, setShowFileMention] = useState(false);
+  const [fileMentionQuery, setFileMentionQuery] = useState('');
+  const [fileMentionIndex, setFileMentionIndex] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -969,6 +995,115 @@ export function ChatPanel({
     [pendingAttachments.length],
   );
 
+  const addFileAttachments = useCallback(
+    async (files: FileList | File[]) => {
+      const fileArray = Array.from(files);
+      if (fileArray.length === 0) return;
+
+      const nextAttachments: ChatAttachment[] = [];
+      const errors: string[] = [];
+      let availableSlots = MAX_FILE_ATTACHMENTS - pendingAttachments.length;
+
+      for (const file of fileArray) {
+        if (availableSlots <= 0) {
+          errors.push(`Attach up to ${MAX_FILE_ATTACHMENTS} files per message.`);
+          break;
+        }
+
+        const ext = getFileExtension(file.name);
+        if (!isTextExtension(ext)) {
+          errors.push(`${file.name} is not a supported file type.`);
+          continue;
+        }
+        if (file.size > MAX_ATTACHMENT_SIZE) {
+          errors.push(
+            `${file.name} is ${formatFileSize(file.size)}. Maximum is ${formatFileSize(MAX_ATTACHMENT_SIZE)}.`,
+          );
+          continue;
+        }
+
+        try {
+          const textContent = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () =>
+              typeof reader.result === 'string'
+                ? resolve(reader.result)
+                : reject(new Error('Could not read file.'));
+            reader.onerror = () => reject(reader.error ?? new Error('Could not read file.'));
+            reader.readAsText(file);
+          });
+          nextAttachments.push({
+            id: generateId(),
+            kind: 'file',
+            name: file.name || 'file',
+            mimeType: file.type || 'text/plain',
+            size: file.size,
+            dataUrl: '',
+            textContent,
+          });
+          availableSlots--;
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : `Could not read ${file.name}.`);
+        }
+      }
+
+      if (nextAttachments.length > 0) {
+        setPendingAttachments((prev) => [...prev, ...nextAttachments]);
+      }
+      setAttachmentError(errors.length > 0 ? errors[0] : null);
+      inputRef.current?.focus();
+    },
+    [pendingAttachments.length],
+  );
+
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const hasFiles = Array.from(event.dataTransfer.items).some(
+      (item) => item.kind === 'file',
+    );
+    if (hasFiles) {
+      event.dataTransfer.dropEffect = 'copy';
+      setIsDraggingFile(true);
+      setIsDraggingImage(false);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setIsDraggingFile(false);
+      setIsDraggingImage(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsDraggingFile(false);
+      setIsDraggingImage(false);
+
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+      const textFiles = files.filter((f) => {
+        const ext = getFileExtension(f.name);
+        return isTextExtension(ext);
+      });
+
+      if (imageFiles.length > 0) {
+        void addImageFiles(imageFiles);
+      }
+      if (textFiles.length > 0) {
+        void addFileAttachments(textFiles);
+      }
+      if (imageFiles.length === 0 && textFiles.length === 0) {
+        const names = files.map((f) => f.name).join(', ');
+        setAttachmentError(`Unsupported file type: ${names}`);
+      }
+    },
+    [addImageFiles, addFileAttachments],
+  );
+
   const removePendingAttachment = useCallback((id: string) => {
     setPendingAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
     setAttachmentError(null);
@@ -977,30 +1112,43 @@ export function ChatPanel({
   const handleFileInputChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.currentTarget.files;
-      if (files) void addImageFiles(files);
+      if (files) {
+        const fileArray = Array.from(files);
+        const imageFiles = fileArray.filter((f) => f.type.startsWith('image/'));
+        const textFiles = fileArray.filter((f) => {
+          const ext = getFileExtension(f.name);
+          return isTextExtension(ext);
+        });
+        if (imageFiles.length > 0) void addImageFiles(imageFiles);
+        if (textFiles.length > 0) void addFileAttachments(textFiles);
+      }
       event.currentTarget.value = '';
     },
-    [addImageFiles],
+    [addImageFiles, addFileAttachments],
   );
 
   const handlePaste = useCallback(
     (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const files = Array.from(event.clipboardData.files).filter((file) =>
-        file.type.startsWith('image/'),
-      );
+      const files = Array.from(event.clipboardData.files);
       if (files.length === 0) return;
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+      const textFiles = files.filter((f) => {
+        const ext = getFileExtension(f.name);
+        return isTextExtension(ext);
+      });
+      if (imageFiles.length === 0 && textFiles.length === 0) return;
       event.preventDefault();
-      void addImageFiles(files);
+      if (imageFiles.length > 0) void addImageFiles(imageFiles);
+      if (textFiles.length > 0) void addFileAttachments(textFiles);
     },
-    [addImageFiles],
+    [addImageFiles, addFileAttachments],
   );
 
   const handleInputDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    if (
-      Array.from(event.dataTransfer.items).some(
-        (item) => item.kind === 'file' && item.type.startsWith('image/'),
-      )
-    ) {
+    const hasFiles = Array.from(event.dataTransfer.items).some(
+      (item) => item.kind === 'file',
+    );
+    if (hasFiles) {
       event.preventDefault();
       setIsDraggingImage(true);
     }
@@ -1014,15 +1162,21 @@ export function ChatPanel({
 
   const handleInputDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      const files = Array.from(event.dataTransfer.files).filter((file) =>
-        file.type.startsWith('image/'),
-      );
+      const files = Array.from(event.dataTransfer.files);
       if (files.length === 0) return;
       event.preventDefault();
+      event.stopPropagation();
       setIsDraggingImage(false);
-      void addImageFiles(files);
+
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+      const textFiles = files.filter((f) => {
+        const ext = getFileExtension(f.name);
+        return isTextExtension(ext);
+      });
+      if (imageFiles.length > 0) void addImageFiles(imageFiles);
+      if (textFiles.length > 0) void addFileAttachments(textFiles);
     },
-    [addImageFiles],
+    [addImageFiles, addFileAttachments],
   );
 
   const toggleListening = useCallback(() => {
@@ -1612,7 +1766,102 @@ export function ChatPanel({
     ],
   );
 
+  const fileMentionResults = useMemo(() => {
+    if (!showFileMention || !fileMentionQuery) return [];
+    const q = fileMentionQuery.toLowerCase();
+    const matching = notes
+      .filter(
+        (note) =>
+          note.title.toLowerCase().includes(q) || note.path.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+    return matching;
+  }, [showFileMention, fileMentionQuery, notes]);
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setInputValue(value);
+
+      // Detect @mention
+      const cursorPos = e.target.selectionStart;
+      const textBeforeCursor = value.slice(0, cursorPos);
+      const atIndex = textBeforeCursor.lastIndexOf('@');
+
+      if (atIndex !== -1) {
+        // Check that @ is at word boundary (preceded by space or start)
+        const charBeforeAt = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
+        if (charBeforeAt === ' ' || charBeforeAt === '\n' || charBeforeAt === '\t' || atIndex === 0) {
+          const query = textBeforeCursor.slice(atIndex + 1);
+          // Only show if no spaces (single word)
+          if (!query.includes(' ') && query.length <= 60) {
+            setFileMentionQuery(query);
+            setShowFileMention(true);
+            setFileMentionIndex(0);
+          } else {
+            setShowFileMention(false);
+          }
+        } else {
+          setShowFileMention(false);
+        }
+      } else {
+        setShowFileMention(false);
+      }
+    },
+    [],
+  );
+
+  const insertFileMention = useCallback(
+    (note: VaultNote) => {
+      const cursorPos = inputRef.current?.selectionStart ?? inputValue.length;
+      const textBeforeCursor = inputValue.slice(0, cursorPos);
+      const atIndex = textBeforeCursor.lastIndexOf('@');
+
+      if (atIndex === -1) return;
+
+      const mention = `@${note.title}`;
+      const newValue =
+        inputValue.slice(0, atIndex) + mention + ' ' + inputValue.slice(cursorPos);
+      setInputValue(newValue);
+      setShowFileMention(false);
+
+      // Restore focus and put cursor after the inserted mention
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          const pos = atIndex + mention.length + 1;
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(pos, pos);
+        }
+      });
+    },
+    [inputValue],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // File mention navigation
+    if (showFileMention && fileMentionResults.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFileMentionIndex((i) => Math.min(i + 1, fileMentionResults.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFileMentionIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertFileMention(fileMentionResults[fileMentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowFileMention(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if ((inputValue.trim() || pendingAttachments.length > 0) && !isStreaming) {
@@ -2236,6 +2485,38 @@ export function ChatPanel({
     );
   };
 
+  const renderFileChips = (attachments: ChatAttachment[] | undefined, editable = false) => {
+    const files = (attachments ?? []).filter((attachment) => attachment.kind === 'file');
+    if (files.length === 0) return null;
+    return (
+      <div className="chat-file-chips">
+        {files.map((attachment) => (
+          <div key={attachment.id} className="chat-file-chip">
+            <FileText size={13} />
+            <span
+              className="chat-file-chip-name"
+              title={`${attachment.name} · ${formatFileSize(attachment.size)}`}
+            >
+              {attachment.name}
+            </span>
+            <span className="chat-file-chip-size">{formatFileSize(attachment.size)}</span>
+            {editable && (
+              <button
+                type="button"
+                className="chat-file-chip-remove"
+                onClick={() => removePendingAttachment(attachment.id)}
+                aria-label={`Remove ${attachment.name}`}
+                title="Remove file"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderImageAttachments = (attachments: ChatAttachment[] | undefined, editable = false) => {
     const images = (attachments ?? []).filter((attachment) => attachment.kind === 'image');
     if (images.length === 0) return null;
@@ -2281,6 +2562,7 @@ export function ChatPanel({
       return (
         <div className="chat-message-edit">
           {renderImageAttachments(message.attachments)}
+          {renderFileChips(message.attachments)}
           <textarea
             ref={editInputRef}
             className="chat-message-edit-input"
@@ -2612,7 +2894,12 @@ export function ChatPanel({
   const contextTokenEstimate = Math.ceil(contextCharCount / 4);
 
   return (
-    <div className="chat-panel">
+    <div
+      className="chat-panel"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {layout === 'docked' && (
         <button
           className="chat-resize-handle"
@@ -2916,6 +3203,35 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* Drop zone overlay */}
+      {(isDraggingFile || isDraggingImage) && (
+        <div
+          className="chat-drop-overlay"
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleDrop(e);
+          }}
+        >
+          <div className="chat-drop-overlay-content">
+            <div className="chat-drop-overlay-icon">
+              <FileText size={32} />
+            </div>
+            <div className="chat-drop-overlay-label">
+              Drop files here
+            </div>
+            <div className="chat-drop-overlay-hint">
+              Images, Markdown, JSON, CSV, YAML, and text files
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         className="chat-messages"
         ref={messagesScrollRef}
@@ -2978,6 +3294,7 @@ export function ChatPanel({
                 {message.role === 'user' ? (
                   <div className="chat-message-content">
                     {!isEditing && renderImageAttachments(message.attachments)}
+                    {!isEditing && renderFileChips(message.attachments)}
                     {isEditing
                       ? null
                       : message.content.split('\n').map((line, i, arr) => (
@@ -3061,8 +3378,31 @@ export function ChatPanel({
         )}
       </div>
 
+      {/* File mention popup */}
+      {showFileMention && fileMentionResults.length > 0 && (
+        <div className="chat-file-mention" role="listbox" aria-label="File mentions">
+          {fileMentionResults.map((note, index) => (
+            <button
+              key={getNoteKey(note)}
+              role="option"
+              aria-selected={index === fileMentionIndex}
+              className={`chat-file-mention-item${index === fileMentionIndex ? ' selected' : ''}`}
+              onClick={() => insertFileMention(note)}
+              onMouseEnter={() => setFileMentionIndex(index)}
+            >
+              <FileText size={13} />
+              <div className="chat-file-mention-item-content">
+                <span className="chat-file-mention-item-title">{note.title}</span>
+                <span className="chat-file-mention-item-path">{note.path}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="chat-input-area">
         {renderImageAttachments(pendingAttachments, true)}
+        {renderFileChips(pendingAttachments, true)}
         {(attachmentError || speechError) && (
           <div className="chat-input-error" role="status">
             {attachmentError || speechError}
@@ -3077,7 +3417,7 @@ export function ChatPanel({
           <input
             ref={fileInputRef}
             type="file"
-            accept={ACCEPTED_IMAGE_INPUT}
+            accept={ACCEPTED_INPUT_TYPES}
             multiple
             className="chat-file-input"
             onChange={handleFileInputChange}
@@ -3091,8 +3431,8 @@ export function ChatPanel({
             disabled={
               inputDisabled || isStreaming || pendingAttachments.length >= MAX_IMAGE_ATTACHMENTS
             }
-            title={`Attach image (${MAX_IMAGE_ATTACHMENTS} max, ${formatFileSize(MAX_IMAGE_ATTACHMENT_SIZE)} each)`}
-            aria-label="Attach image"
+            title={`Attach images and files`}
+            aria-label="Attach images and files"
           >
             <Image size={15} />
           </button>
@@ -3100,7 +3440,7 @@ export function ChatPanel({
             ref={inputRef}
             className="chat-input"
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={
