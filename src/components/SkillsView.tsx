@@ -1,6 +1,7 @@
 import {
   Bot,
   CheckCircle2,
+  Clock,
   Copy,
   ExternalLink,
   FolderOpen,
@@ -13,6 +14,7 @@ import {
 import { useMemo, useState } from 'react';
 import type { Skill, VaultNote } from '../types';
 import { getNoteKey } from '../utils/noteKey';
+import { getSkillUsage } from '../utils/usageStore';
 import {
   getRelatedAgentsForSkill,
   getRelatedToolsForSkill,
@@ -39,6 +41,20 @@ export function SkillsView({ notes, onSelectNote, onEditSkill }: SkillsViewProps
   const [searchQuery, setSearchQuery] = useState('');
 
   const skills = useMemo(() => getSkillsFromNotes(notes), [notes]);
+
+  // Load skill usage stats
+  const skillUsageStats = useMemo(() => {
+    const stats = getSkillUsage();
+    return stats;
+  }, [notes]);
+
+  const skillUsageMap = useMemo(() => {
+    const map = new Map<string, { totalUses: number; lastUsed: number | null }>();
+    for (const stat of skillUsageStats) {
+      map.set(stat.skillId, { totalUses: stat.totalUses, lastUsed: stat.lastUsed });
+    }
+    return map;
+  }, [skillUsageStats]);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
@@ -187,6 +203,7 @@ export function SkillsView({ notes, onSelectNote, onEditSkill }: SkillsViewProps
                 onSelectNote={onSelectNote}
                 onOpenDetail={() => setSelectedSkill(skillNote)}
                 onEditSkill={onEditSkill}
+                skillUsage={skillUsageMap.get(skill.id)}
               />
             );
           })}
@@ -225,6 +242,7 @@ export function SkillsView({ notes, onSelectNote, onEditSkill }: SkillsViewProps
             setSelectedSkill(null);
           }}
           onEditSkill={onEditSkill}
+          skillUsage={skillUsageMap.get(loadSkillMetadata(selectedSkill).id)}
         />
       )}
     </main>
@@ -239,6 +257,7 @@ interface SkillCardProps {
   onSelectNote: (path: string) => void;
   onOpenDetail: () => void;
   onEditSkill: (skill: VaultNote) => void;
+  skillUsage?: { totalUses: number; lastUsed: number | null };
 }
 
 function SkillCard({
@@ -249,6 +268,7 @@ function SkillCard({
   onSelectNote,
   onOpenDetail,
   onEditSkill,
+  skillUsage,
 }: SkillCardProps) {
   const relatedAgents = useMemo(() => getRelatedAgentsForSkill(skill, allNotes), [skill, allNotes]);
   const relatedTools = useMemo(() => getRelatedToolsForSkill(skill, allNotes), [skill, allNotes]);
@@ -291,7 +311,16 @@ function SkillCard({
           {relatedAgents.length > 0 && (
             <span>Used by: {relatedAgents.map((a) => a.title).join(', ')}</span>
           )}
-          {lastUsed && <span>Last used: {lastUsed.toLocaleDateString()}</span>}
+          {skillUsage && skillUsage.totalUses > 0 && (
+            <span>
+              <Clock size={10} style={{ display: 'inline', verticalAlign: 'middle' }} />{' '}
+              {skillUsage.totalUses} invocations
+            </span>
+          )}
+          {skillUsage && skillUsage.lastUsed && (
+            <span>Last used: {new Date(skillUsage.lastUsed).toLocaleDateString()}</span>
+          )}
+          {!skillUsage?.lastUsed && lastUsed && <span>Last used: {lastUsed.toLocaleDateString()}</span>}
         </div>
       </article>
     );
@@ -344,6 +373,12 @@ function SkillCard({
             <span>Tools</span>
             <strong>{relatedTools.length}</strong>
           </div>
+          {skillUsage && skillUsage.totalUses > 0 && (
+            <div>
+              <span>Invocations</span>
+              <strong>{skillUsage.totalUses}</strong>
+            </div>
+          )}
         </div>
 
         <div className="agent-card-actions-row">
@@ -391,7 +426,14 @@ function SkillCard({
 
       <div className="agent-card-footer">
         <span>{skill.folderPath}</span>
-        {lastUsed && <span>Last used {lastUsed.toLocaleDateString()}</span>}
+        {skillUsage && skillUsage.lastUsed && (
+          <span title="From usage tracking">
+            <Clock size={10} /> {new Date(skillUsage.lastUsed).toLocaleDateString()}
+          </span>
+        )}
+        {!skillUsage?.lastUsed && lastUsed && (
+          <span>Last used {lastUsed.toLocaleDateString()}</span>
+        )}
       </div>
     </article>
   );
@@ -404,6 +446,7 @@ interface SkillDetailDrawerProps {
   onClose: () => void;
   onSelectNote: (path: string) => void;
   onEditSkill: (skill: VaultNote) => void;
+  skillUsage?: { totalUses: number; lastUsed: number | null };
 }
 
 function SkillDetailDrawer({
@@ -413,6 +456,7 @@ function SkillDetailDrawer({
   onClose,
   onSelectNote,
   onEditSkill,
+  skillUsage,
 }: SkillDetailDrawerProps) {
   const relatedAgents = useMemo(() => getRelatedAgentsForSkill(skill, allNotes), [skill, allNotes]);
   const relatedTools = useMemo(() => getRelatedToolsForSkill(skill, allNotes), [skill, allNotes]);
@@ -517,6 +561,23 @@ function SkillDetailDrawer({
               <span className="detail-drawer-field-label">Last Used</span>
               <span className="detail-drawer-field-value">{lastUsed.toLocaleDateString()}</span>
             </div>
+          )}
+
+          {skillUsage && skillUsage.totalUses > 0 && (
+            <>
+              <div className="detail-drawer-field">
+                <span className="detail-drawer-field-label">Total Invocations</span>
+                <span className="detail-drawer-field-value">{skillUsage.totalUses}</span>
+              </div>
+              {skillUsage.lastUsed && (
+                <div className="detail-drawer-field">
+                  <span className="detail-drawer-field-label">Last Invoked</span>
+                  <span className="detail-drawer-field-value">
+                    {new Date(skillUsage.lastUsed).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </>
           )}
 
           {!validation.valid && (

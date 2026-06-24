@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Clock,
   ExternalLink,
   FileText,
   LayoutGrid,
@@ -37,6 +38,7 @@ import { getNoteKey } from '../utils/noteKey';
 import { checkBridgeHealth, getCachedBridgeStatus, invokeBridgeTool } from '../utils/bridgeClient';
 import { getMcpServers } from '../utils/mcp';
 import { getAlwaysAllowIds, getPermissionLog, removeAlwaysAllowId } from '../utils/permissions';
+import { getToolUsage } from '../utils/usageStore';
 
 interface ToolsViewProps {
   notes: VaultNote[];
@@ -233,6 +235,17 @@ export function ToolsView({
 
   // Get all tools including internal registry
   const allTools = useMemo(() => getAllTools(notes), [notes]);
+
+  // Load tool usage stats
+  const toolUsageStats = useMemo(() => getToolUsage(), [notes]);
+
+  const toolUsageMap = useMemo(() => {
+    const map = new Map<string, { totalCalls: number; lastCalled: number | null; avgDurationMs: number }>();
+    for (const stat of toolUsageStats) {
+      map.set(stat.toolId, { totalCalls: stat.totalCalls, lastCalled: stat.lastCalled, avgDurationMs: stat.avgDurationMs });
+    }
+    return map;
+  }, [toolUsageStats]);
 
   // Find the source note for a tool (if from vault)
   const getSourceNote = (tool: Tool): VaultNote | undefined => {
@@ -1017,6 +1030,7 @@ export function ToolsView({
                 onClick={() => handleToolClick(tool)}
                 onSelectNote={onSelectNote}
                 sourceNote={getSourceNote(tool)}
+                toolUsage={toolUsageMap.get(tool.id)}
               />
             ) : (
               <ToolListCard
@@ -1025,6 +1039,7 @@ export function ToolsView({
                 onClick={() => handleToolClick(tool)}
                 onSelectNote={onSelectNote}
                 sourceNote={getSourceNote(tool)}
+                toolUsage={toolUsageMap.get(tool.id)}
               />
             ),
           )}
@@ -1083,6 +1098,7 @@ export function ToolsView({
           onPermissionChange={(permission) => handlePermissionChange(selectedTool.id, permission)}
           sourceNote={getSourceNote(selectedTool)}
           onMarkitdownConvert={onMarkitdownConvert}
+          toolUsage={toolUsageMap.get(selectedTool.id)}
         />
       )}
 
@@ -1104,9 +1120,10 @@ interface ToolCardProps {
   onClick: () => void;
   onSelectNote: (key: string) => void;
   sourceNote?: VaultNote;
+  toolUsage?: { totalCalls: number; lastCalled: number | null; avgDurationMs: number };
 }
 
-function ToolCard({ tool, onClick, onSelectNote, sourceNote }: ToolCardProps) {
+function ToolCard({ tool, onClick, onSelectNote, sourceNote, toolUsage }: ToolCardProps) {
   const riskClass = getRiskColorClass(tool.risk);
   const cardClasses = [
     'agent-rich-card',
@@ -1177,6 +1194,16 @@ function ToolCard({ tool, onClick, onSelectNote, sourceNote }: ToolCardProps) {
       <div className="agent-card-footer">
         <span>{tool.source === 'system' ? 'system' : tool.provider}</span>
         {tool.updatedAt && <span>Updated {new Date(tool.updatedAt).toLocaleDateString()}</span>}
+        {toolUsage && toolUsage.totalCalls > 0 && (
+          <span title={`Avg: ${Math.round(toolUsage.avgDurationMs)}ms`}>
+            <Clock size={10} /> {toolUsage.totalCalls} calls
+          </span>
+        )}
+        {toolUsage && toolUsage.lastCalled && (
+          <span>
+            <Clock size={10} /> {new Date(toolUsage.lastCalled).toLocaleDateString()}
+          </span>
+        )}
       </div>
     </article>
   );
@@ -1187,9 +1214,10 @@ interface ToolListCardProps {
   onClick: () => void;
   onSelectNote: (key: string) => void;
   sourceNote?: VaultNote;
+  toolUsage?: { totalCalls: number; lastCalled: number | null; avgDurationMs: number };
 }
 
-function ToolListCard({ tool, onClick, onSelectNote, sourceNote }: ToolListCardProps) {
+function ToolListCard({ tool, onClick, onSelectNote, sourceNote, toolUsage }: ToolListCardProps) {
   const riskClass = getRiskColorClass(tool.risk);
   const cardClasses = [
     'panel-card',
@@ -1268,6 +1296,7 @@ interface ToolDetailDrawerProps {
     fileType?: string;
     suggestedTitle?: string;
   }) => Promise<{ success: boolean; error?: string; path?: string }>;
+  toolUsage?: { totalCalls: number; lastCalled: number | null; avgDurationMs: number };
 }
 
 function ToolDetailDrawer({
@@ -1278,6 +1307,7 @@ function ToolDetailDrawer({
   onPermissionChange,
   sourceNote,
   onMarkitdownConvert,
+  toolUsage,
 }: ToolDetailDrawerProps) {
   const drawerBridgeStatus = getCachedBridgeStatus();
   const relatedAgents = useMemo(() => getRelatedAgentsForTool(tool, notes), [tool, notes]);
@@ -1363,6 +1393,27 @@ function ToolDetailDrawer({
               {tool.source === 'system' ? 'System' : 'Vault note'}
             </span>
           </div>
+
+          {toolUsage && toolUsage.totalCalls > 0 && (
+            <>
+              <div className="detail-drawer-field">
+                <span className="detail-drawer-field-label">Total Calls</span>
+                <span className="detail-drawer-field-value">{toolUsage.totalCalls}</span>
+              </div>
+              <div className="detail-drawer-field">
+                <span className="detail-drawer-field-label">Avg Duration</span>
+                <span className="detail-drawer-field-value">{Math.round(toolUsage.avgDurationMs)}ms</span>
+              </div>
+              {toolUsage.lastCalled && (
+                <div className="detail-drawer-field">
+                  <span className="detail-drawer-field-label">Last Called</span>
+                  <span className="detail-drawer-field-value">
+                    {new Date(toolUsage.lastCalled).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
 
           {/* MCP Servers Section */}
           {tool.provider === 'mcp' && (

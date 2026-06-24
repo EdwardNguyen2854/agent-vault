@@ -621,3 +621,368 @@ export function buildWeeklySummaryMarkdown(summary: UsageSummary, days = 7): str
   }
   return lines.join('\n');
 }
+
+// =============================================================================
+// Per-entity usage tracking (skill/tool invocation records)
+// =============================================================================
+
+const ENTITY_USAGE_KEY = 'agent-vault-entity-usage';
+const ENTITY_USAGE_VERSION = 1;
+const ENTITY_USAGE_RETENTION_DAYS = 90;
+
+export interface SkillUseRecord {
+  skillId: string;
+  skillName: string;
+  agentId?: string;
+  agentName?: string;
+  vaultId?: string;
+  success: boolean;
+  timestamp: number;
+}
+
+export interface ToolUseRecord {
+  toolId: string;
+  toolName: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  durationMs: number;
+  success: boolean;
+  timestamp: number;
+}
+
+export interface TrackedAgentRun {
+  id: string;
+  agentKey: string;
+  agentName: string;
+  skillKey?: string;
+  skillName?: string;
+  model: string;
+  provider: string;
+  status: AgentRun['status'];
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  toolCount: number;
+  error?: string;
+}
+
+export interface SkillUsageStats {
+  skillId: string;
+  skillName: string;
+  totalUses: number;
+  successfulUses: number;
+  failedUses: number;
+  lastUsed: number | null;
+  uniqueAgents: number;
+}
+
+export interface ToolUsageStats {
+  toolId: string;
+  toolName: string;
+  totalCalls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  lastCalled: number | null;
+  avgDurationMs: number;
+  totalDurationMs: number;
+}
+
+export interface AgentRunStats {
+  totalRuns: number;
+  completedRuns: number;
+  failedRuns: number;
+  cancelledRuns: number;
+  runningRuns: number;
+  successRate: number;
+  avgDurationMs: number;
+  totalDurationMs: number;
+  lastRun: number | null;
+  runsByDay: Array<{ date: string; value: number }>;
+  topAgents: Array<{ name: string; count: number }>;
+  topSkills: Array<{ name: string; count: number }>;
+}
+
+export interface DateRange {
+  start: number;
+  end: number;
+}
+
+function parseDateRange(range?: number): DateRange {
+  const now = Date.now();
+  const start = range
+    ? now - range * 86_400_000
+    : now - ENTITY_USAGE_RETENTION_DAYS * 86_400_000;
+  return { start, end: now };
+}
+
+interface EntityUsageStore {
+  version: number;
+  skills: SkillUseRecord[];
+  tools: ToolUseRecord[];
+  runs: TrackedAgentRun[];
+}
+
+function loadEntityUsage(): EntityUsageStore {
+  try {
+    const raw = localStorage.getItem(ENTITY_USAGE_KEY);
+    if (!raw) return { version: ENTITY_USAGE_VERSION, skills: [], tools: [], runs: [] };
+    const parsed = JSON.parse(raw) as EntityUsageStore;
+    if (parsed.version !== ENTITY_USAGE_VERSION) {
+      return { version: ENTITY_USAGE_VERSION, skills: [], tools: [], runs: [] };
+    }
+    return parsed;
+  } catch {
+    return { version: ENTITY_USAGE_VERSION, skills: [], tools: [], runs: [] };
+  }
+}
+
+function saveEntityUsage(store: EntityUsageStore): void {
+  try {
+    const cutoff = Date.now() - ENTITY_USAGE_RETENTION_DAYS * 86_400_000;
+    store.skills = store.skills.filter((r) => r.timestamp >= cutoff);
+    store.tools = store.tools.filter((r) => r.timestamp >= cutoff);
+    store.runs = store.runs.filter((r) => r.startedAt >= cutoff);
+    localStorage.setItem(ENTITY_USAGE_KEY, JSON.stringify(store));
+  } catch {
+    // Silently ignore storage errors
+  }
+}
+
+export function recordSkillUse(params: {
+  skillId: string;
+  skillName: string;
+  agentId?: string;
+  agentName?: string;
+  vaultId?: string;
+  success: boolean;
+}): void {
+  const store = loadEntityUsage();
+  store.skills.push({
+    skillId: params.skillId,
+    skillName: params.skillName,
+    agentId: params.agentId,
+    agentName: params.agentName,
+    vaultId: params.vaultId,
+    success: params.success,
+    timestamp: Date.now(),
+  });
+  saveEntityUsage(store);
+}
+
+export function recordToolCall(params: {
+  toolId: string;
+  toolName: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  durationMs: number;
+}): void {
+  const store = loadEntityUsage();
+  store.tools.push({
+    toolId: params.toolId,
+    toolName: params.toolName,
+    input: params.input,
+    output: params.output,
+    error: params.error,
+    durationMs: params.durationMs,
+    success: !params.error,
+    timestamp: Date.now(),
+  });
+  saveEntityUsage(store);
+}
+
+export function recordAgentRun(params: {
+  id: string;
+  agentKey: string;
+  agentName: string;
+  skillKey?: string;
+  skillName?: string;
+  model: string;
+  provider: string;
+  status: AgentRun['status'];
+  startedAt: number;
+  completedAt?: number;
+  toolCount: number;
+  error?: string;
+}): void {
+  const store = loadEntityUsage();
+  const existing = store.runs.findIndex((r) => r.id === params.id);
+  const record: TrackedAgentRun = {
+    ...params,
+    durationMs: params.completedAt
+      ? params.completedAt - params.startedAt
+      : undefined,
+  };
+  if (existing >= 0) {
+    store.runs[existing] = record;
+  } else {
+    store.runs.push(record);
+  }
+  saveEntityUsage(store);
+}
+
+export function getSkillUsage(skillId?: string, rangeDays?: number): SkillUsageStats[] {
+  const store = loadEntityUsage();
+  const { start, end } = parseDateRange(rangeDays);
+
+  const records = store.skills.filter(
+    (r) => r.timestamp >= start && r.timestamp <= end && (!skillId || r.skillId === skillId),
+  );
+
+  if (skillId) {
+    const skillRecords = records.filter((r) => r.skillId === skillId);
+    const lastUsed = skillRecords.length > 0
+      ? Math.max(...skillRecords.map((r) => r.timestamp))
+      : null;
+    const agentSet = new Set(skillRecords.map((r) => r.agentId).filter(Boolean));
+    return [{
+      skillId,
+      skillName: skillRecords[0]?.skillName ?? skillId,
+      totalUses: skillRecords.length,
+      successfulUses: skillRecords.filter((r) => r.success).length,
+      failedUses: skillRecords.filter((r) => !r.success).length,
+      lastUsed,
+      uniqueAgents: agentSet.size,
+    }];
+  }
+
+  const bySkill = new Map<string, SkillUseRecord[]>();
+  for (const r of records) {
+    const list = bySkill.get(r.skillId) ?? [];
+    list.push(r);
+    bySkill.set(r.skillId, list);
+  }
+
+  return Array.from(bySkill.entries()).map(([id, recs]) => {
+    const lastUsed = recs.length > 0 ? Math.max(...recs.map((r) => r.timestamp)) : null;
+    const agentSet = new Set(recs.map((r) => r.agentId).filter(Boolean));
+    return {
+      skillId: id,
+      skillName: recs[0]?.skillName ?? id,
+      totalUses: recs.length,
+      successfulUses: recs.filter((r) => r.success).length,
+      failedUses: recs.filter((r) => !r.success).length,
+      lastUsed,
+      uniqueAgents: agentSet.size,
+    };
+  });
+}
+
+export function getToolUsage(toolId?: string, rangeDays?: number): ToolUsageStats[] {
+  const store = loadEntityUsage();
+  const { start, end } = parseDateRange(rangeDays);
+
+  const records = store.tools.filter(
+    (r) => r.timestamp >= start && r.timestamp <= end && (!toolId || r.toolId === toolId),
+  );
+
+  if (toolId) {
+    const toolRecords = records.filter((r) => r.toolId === toolId);
+    const lastCalled = toolRecords.length > 0
+      ? Math.max(...toolRecords.map((r) => r.timestamp))
+      : null;
+    const durations = toolRecords.map((r) => r.durationMs);
+    const totalDurationMs = durations.reduce((s, d) => s + d, 0);
+    return [{
+      toolId,
+      toolName: toolRecords[0]?.toolName ?? toolId,
+      totalCalls: toolRecords.length,
+      successfulCalls: toolRecords.filter((r) => r.success).length,
+      failedCalls: toolRecords.filter((r) => !r.success).length,
+      lastCalled,
+      avgDurationMs: durations.length > 0 ? totalDurationMs / durations.length : 0,
+      totalDurationMs,
+    }];
+  }
+
+  const byTool = new Map<string, ToolUseRecord[]>();
+  for (const r of records) {
+    const list = byTool.get(r.toolId) ?? [];
+    list.push(r);
+    byTool.set(r.toolId, list);
+  }
+
+  return Array.from(byTool.entries()).map(([id, recs]) => {
+    const lastCalled = recs.length > 0 ? Math.max(...recs.map((r) => r.timestamp)) : null;
+    const durations = recs.map((r) => r.durationMs);
+    const totalDurationMs = durations.reduce((s, d) => s + d, 0);
+    return {
+      toolId: id,
+      toolName: recs[0]?.toolName ?? id,
+      totalCalls: recs.length,
+      successfulCalls: recs.filter((r) => r.success).length,
+      failedCalls: recs.filter((r) => !r.success).length,
+      lastCalled,
+      avgDurationMs: durations.length > 0 ? totalDurationMs / durations.length : 0,
+      totalDurationMs,
+    };
+  });
+}
+
+export function getAgentRunStats(rangeDays?: number): AgentRunStats {
+  const store = loadEntityUsage();
+  const { start, end } = parseDateRange(rangeDays);
+
+  const records = store.runs.filter((r) => r.startedAt >= start && r.startedAt <= end);
+
+  const completedRuns = records.filter((r) => r.status === 'completed');
+  const failedRuns = records.filter((r) => r.status === 'failed');
+  const cancelledRuns = records.filter((r) => r.status === 'cancelled');
+  const runningRuns = records.filter((r) => r.status === 'running');
+
+  const durations = records
+    .filter((r) => r.durationMs != null)
+    .map((r) => r.durationMs!);
+  const totalDurationMs = durations.reduce((s, d) => s + d, 0);
+
+  const byDay = new Map<string, number>();
+  for (const r of records) {
+    const d = new Date(r.startedAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    byDay.set(key, (byDay.get(key) ?? 0) + 1);
+  }
+  const runsByDay = Array.from(byDay.entries())
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-30);
+
+  const byAgent = new Map<string, number>();
+  for (const r of records) {
+    const key = r.agentName || r.agentKey;
+    byAgent.set(key, (byAgent.get(key) ?? 0) + 1);
+  }
+  const topAgents = Array.from(byAgent.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const bySkill = new Map<string, number>();
+  for (const r of records) {
+    if (r.skillName) {
+      bySkill.set(r.skillName, (bySkill.get(r.skillName) ?? 0) + 1);
+    }
+  }
+  const topSkills = Array.from(bySkill.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return {
+    totalRuns: records.length,
+    completedRuns: completedRuns.length,
+    failedRuns: failedRuns.length,
+    cancelledRuns: cancelledRuns.length,
+    runningRuns: runningRuns.length,
+    successRate:
+      records.length > 0
+        ? Math.round((completedRuns.length / records.length) * 100)
+        : 0,
+    avgDurationMs: durations.length > 0 ? totalDurationMs / durations.length : 0,
+    totalDurationMs,
+    lastRun: records.length > 0 ? Math.max(...records.map((r) => r.startedAt)) : null,
+    runsByDay,
+    topAgents,
+    topSkills,
+  };
+}

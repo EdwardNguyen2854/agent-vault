@@ -97,6 +97,7 @@ import {
 import { dispatchInternalTool } from '../utils/internalTools';
 import { getAlwaysAllowIds, setAlwaysAllowId, logPermissionGrant } from '../utils/permissions';
 import { evaluateToolCall } from '../utils/permissionGate';
+import { recordAgentRun, recordSkillUse } from '../utils/usageStore';
 import type { PermissionDecision } from './AskPermissionDialog';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
 
@@ -1682,6 +1683,9 @@ export function ChatPanel({
       }
 
       let failed = false;
+      const runStartedAt = Date.now();
+      const runId = assistantId;
+      let recordedTranscript: ToolCallRecord[] = [];
       try {
         const {
           content: response,
@@ -1698,7 +1702,51 @@ export function ChatPanel({
           effectiveSkillNote,
           effectiveContextItems,
         );
-        if (cancelled) return;
+        recordedTranscript = transcript ?? [];
+
+        if (cancelled) {
+          recordAgentRun({
+            id: runId,
+            agentKey: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
+            agentName: selectedAgentNote?.title ?? 'Assistant',
+            skillKey: effectiveSkillNote ? getNoteKey(effectiveSkillNote) : undefined,
+            skillName: effectiveSkillNote?.title,
+            model: aiConfig.lmStudio.modelName,
+            provider: 'lmstudio',
+            status: 'cancelled',
+            startedAt: runStartedAt,
+            toolCount: recordedTranscript.length,
+          });
+          return;
+        }
+
+        // Record successful agent run
+        recordAgentRun({
+          id: runId,
+          agentKey: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
+          agentName: selectedAgentNote?.title ?? 'Assistant',
+          skillKey: effectiveSkillNote ? getNoteKey(effectiveSkillNote) : undefined,
+          skillName: effectiveSkillNote?.title,
+          model: aiConfig.lmStudio.modelName,
+          provider: 'lmstudio',
+          status: 'completed',
+          startedAt: runStartedAt,
+          completedAt: Date.now(),
+          toolCount: recordedTranscript.length,
+        });
+
+        // Record skill usage
+        if (effectiveSkillNote) {
+          const skillId = getNoteKey(effectiveSkillNote);
+          recordSkillUse({
+            skillId,
+            skillName: effectiveSkillNote.title,
+            agentId: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
+            agentName: selectedAgentNote?.title ?? 'unknown',
+            success: true,
+          });
+        }
+
         await onAgentResponse?.({
           userPrompt: prompt,
           response,
@@ -1724,6 +1772,35 @@ export function ChatPanel({
       } catch (error) {
         failed = true;
         setAgentBusyState('error');
+
+        // Record failed agent run
+        recordAgentRun({
+          id: runId,
+          agentKey: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
+          agentName: selectedAgentNote?.title ?? 'Assistant',
+          skillKey: effectiveSkillNote ? getNoteKey(effectiveSkillNote) : undefined,
+          skillName: effectiveSkillNote?.title,
+          model: aiConfig.lmStudio.modelName,
+          provider: 'lmstudio',
+          status: 'failed',
+          startedAt: runStartedAt,
+          completedAt: Date.now(),
+          toolCount: recordedTranscript.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Record failed skill usage
+        if (effectiveSkillNote) {
+          const skillId = getNoteKey(effectiveSkillNote);
+          recordSkillUse({
+            skillId,
+            skillName: effectiveSkillNote.title,
+            agentId: selectedAgentNote ? getNoteKey(selectedAgentNote) : 'unknown',
+            agentName: selectedAgentNote?.title ?? 'unknown',
+            success: false,
+          });
+        }
+
         console.error('Chat error:', error);
         const parsed = parseLMStudioError(error);
         const errorMessage: ChatMessage = {

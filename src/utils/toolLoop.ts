@@ -18,6 +18,7 @@ import { dispatchInternalTool } from './internalTools';
 import { invokeBridgeTool } from './bridgeClient';
 import { sendChatRequest } from './lmstudio';
 import { getAllTools } from './tools';
+import { recordToolCall } from './usageStore';
 
 export interface ToolLoopOptions {
   agent?: Agent | null;
@@ -515,6 +516,17 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<ToolLoopRes
         startedAt,
       };
       transcript.push(record);
+
+      // Track tool usage
+      recordToolCall({
+        toolId: tool.id,
+        toolName: tool.name,
+        input: parsedInput,
+        output: toolResult.output,
+        error: toolResult.error,
+        durationMs: toolResult.durationMs,
+      });
+
       onEvent?.({
         id: toolCall.id,
         toolId: tool.id,
