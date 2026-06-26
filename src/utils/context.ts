@@ -1,12 +1,9 @@
 import type { AgentContext, AgentContextItem, ContextSettings, VaultNote } from '../types';
 import type { UIContextSettings } from './settings';
 import { getNoteKey } from './noteKey';
-import {
-  buildBacklinks,
-  getMarkdownBody,
-  getWorkspaceEntityType,
-  resolveLinkTarget,
-} from './markdown';
+import { buildBacklinks, resolveLinkTarget } from './markdown/graph';
+import { getMarkdownBody } from './markdown/parse';
+import { getWorkspaceEntityType } from './markdown/entity';
 import { basename, normalizeKey, removeMdExtension } from './text';
 import { getAllTools } from './tools';
 import { getMemoryMetadata, isMemoryNote, memoryMatchesTarget } from './memory';

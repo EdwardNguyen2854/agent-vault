@@ -7,7 +7,7 @@ import type {
   VaultNote,
 } from '../types';
 import { createChatSession, loadChatSessions, saveChatSessions } from './chatHistory';
-import { buildBacklinks, resolveLinkTarget } from './markdown';
+import { buildBacklinks, resolveLinkTarget } from './markdown/graph';
 import { getNoteKey } from './noteKey';
 
 const TASK_CONVERSATIONS_KEY = 'agent-vault-task-conversations';

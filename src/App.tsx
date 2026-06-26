@@ -18,10 +18,10 @@ import {
   buildGraphData,
   getBrokenLinks,
   getOrphanNotes,
-  getWorkspaceEntityNotes,
-  parseNoteContent,
   resolveLinkTarget,
-} from './utils/markdown';
+} from './utils/markdown/graph';
+import { getWorkspaceEntityNotes } from './utils/markdown/entity';
+import { parseNoteContent } from './utils/markdown/parse';
 import {
   clearLastVaultName,
   loadPreferences,
@@ -1492,8 +1492,33 @@ export default function App() {
     starterVaults,
   ]);
 
+  const openNoteInDefaultApp = useCallback(async (note: VaultNote) => {
+    try {
+      const file = await note.handle.getFile();
+      const url = URL.createObjectURL(file);
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setStatus(`Opened ${note.path}.`);
+    } catch (error) {
+      console.error(error);
+      setStatus('Could not open note. Check browser permissions for the selected folder.');
+    }
+  }, []);
+
   const selectNote = useCallback(
     (key: string) => {
+      const target = notes.find((n) => getNoteKey(n) === key);
+      if (target?.isBinary) {
+        openNoteInDefaultApp(target);
+        return;
+      }
       // Save current draft for the current tab before switching
       if (selectedKey && selectedKey !== key) {
         setDraftsMap((prev) => ({ ...prev, [selectedKey]: draftRef.current }));
@@ -1504,7 +1529,7 @@ export default function App() {
       setSelectedKey(key);
       setView('editor');
     },
-    [selectedKey],
+    [selectedKey, notes, openNoteInDefaultApp],
   );
 
   const handleCloseTab = useCallback(
@@ -2013,26 +2038,6 @@ export default function App() {
     },
     [tagEditorState, entityTagsData, getMountedVault],
   );
-
-  const openNoteInDefaultApp = useCallback(async (note: VaultNote) => {
-    try {
-      const file = await note.handle.getFile();
-      const url = URL.createObjectURL(file);
-      const opened = window.open(url, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        const link = document.createElement('a');
-        link.href = url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.click();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setStatus(`Opened ${note.path}.`);
-    } catch (error) {
-      console.error(error);
-      setStatus('Could not open note. Check browser permissions for the selected folder.');
-    }
-  }, []);
 
   // v2 Handlers: Tool permissions
   const handleToolPermissionChange = useCallback(
@@ -3154,6 +3159,7 @@ imported: ${new Date().toISOString()}
           onDeleteNote={requestDeleteNote}
           onCopyPath={copyNotePath}
           onFocusMode={() => setFocusMode((v) => !v)}
+          onOpenInDefaultApp={selectedNote ? () => openNoteInDefaultApp(selectedNote) : undefined}
         />
       </div>
     );

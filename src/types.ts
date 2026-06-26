@@ -43,6 +43,7 @@ export interface VaultFile {
   path: string;
   name: string;
   extension: string;
+  isBinary: boolean;
   handle: FileSystemFileHandle;
   updatedAt: number;
   size: number;

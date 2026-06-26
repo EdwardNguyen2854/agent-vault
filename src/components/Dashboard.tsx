@@ -10,7 +10,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { VaultNote, VaultStats } from '../types';
-import { getBrokenLinks, getOrphanNotes, getWorkspaceEntityNotes } from '../utils/markdown';
+import { getBrokenLinks, getOrphanNotes } from '../utils/markdown/graph';
+import { getWorkspaceEntityNotes } from '../utils/markdown/entity';
 import { getNoteKey } from '../utils/noteKey';
 import { formatDate } from '../utils/text';
 
@@ -44,7 +45,7 @@ export function Dashboard({ notes, stats, onSelectNote, onChangeView }: Dashboar
       </div>
 
       <div className="stats-grid">
-        <Stat icon={FileText} label="Notes" value={stats.noteCount} />
+        <Stat icon={FileText} label="Workspaces" value={stats.noteCount} />
         <Stat
           icon={Link2}
           label="Links"

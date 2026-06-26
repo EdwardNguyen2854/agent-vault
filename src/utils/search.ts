@@ -1,5 +1,5 @@
 import type { VaultNote } from '../types';
-import { getMarkdownBody } from './markdown';
+import { getMarkdownBody } from './markdown/parse';
 
 export interface SearchResult {
   note: VaultNote;

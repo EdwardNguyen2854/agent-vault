@@ -2,7 +2,9 @@ import {
   Bot,
   Copy,
   Edit2,
+  ExternalLink,
   Eye,
+  File,
   FileText,
   Focus,
   Home,
@@ -33,6 +35,7 @@ interface EditorPaneProps {
   onDeleteNote?: () => void;
   onCopyPath?: () => void;
   onFocusMode?: () => void;
+  onOpenInDefaultApp?: () => void;
 }
 
 const modeItems: Array<{ mode: EditorMode; label: string; icon: typeof PencilLine }> = [
@@ -66,6 +69,7 @@ export function EditorPane({
   onDeleteNote,
   onCopyPath,
   onFocusMode,
+  onOpenInDefaultApp,
 }: EditorPaneProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [excalidrawOpen, setExcalidrawOpen] = useState(false);
@@ -83,6 +87,23 @@ export function EditorPane({
           <small className="empty-hint">
             Tip: Press <kbd>Ctrl+K</kbd> to open the command center.
           </small>
+        </div>
+      </main>
+    );
+  }
+
+  if (note.isBinary) {
+    return (
+      <main className="editor-shell no-note">
+        <div className="empty-state">
+          <div className="empty-icon">
+            <File size={32} />
+          </div>
+          <h2>{note.name}</h2>
+          <p className="empty-hint">This file type cannot be edited in the browser.</p>
+          <button className="primary-button" onClick={onOpenInDefaultApp} style={{ marginTop: 16 }}>
+            <ExternalLink size={14} /> Open in default app
+          </button>
         </div>
       </main>
     );

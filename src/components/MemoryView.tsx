@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Memory, MemoryType, VaultNote } from '../types';
-import { buildBacklinks } from '../utils/markdown';
+import { buildBacklinks } from '../utils/markdown/graph';
 import { getNoteKey } from '../utils/noteKey';
 import { getMemoriesFromNotes, saveToMemory } from '../utils/memory';
 

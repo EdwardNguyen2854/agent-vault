@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { GraphData, GraphNode, VaultNote } from '../../types';
-import { buildGraphData, getOrphanNotes } from '../../utils/markdown';
+import { buildGraphData, getOrphanNotes } from '../../utils/markdown/graph';
 import { getNoteKey } from '../../utils/noteKey';
 
 export interface GraphStats {

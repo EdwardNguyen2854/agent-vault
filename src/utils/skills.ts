@@ -1,6 +1,7 @@
 import type { Skill, VaultNote } from '../types';
 import { getNoteKey } from './noteKey';
-import { buildBacklinks, getWorkspaceEntityType } from './markdown';
+import { buildBacklinks } from './markdown/graph';
+import { getWorkspaceEntityType } from './markdown/entity';
 import { basename, titleFromPath } from './text';
 
 /**

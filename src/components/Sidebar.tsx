@@ -47,7 +47,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { view: 'editor', label: 'Notes', icon: Edit },
+      { view: 'editor', label: 'Workspaces', icon: Edit },
       { view: 'dashboard', label: 'Dashboard', icon: Home },
       { view: 'graph', label: 'Graph', icon: GitFork },
       { view: 'tasks', label: 'Tasks', icon: CheckSquare },

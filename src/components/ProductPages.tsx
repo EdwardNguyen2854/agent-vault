@@ -98,7 +98,7 @@ const releaseNotes = [
       {
         title: 'Local-first foundation',
         items: [
-          'Notes stay on your machine as plain markdown — nothing is stored in a proprietary format.',
+          'Workspaces stay on your machine as plain markdown — nothing is stored in a proprietary format.',
           'Wiki links resolve against title, file name, path, and full path with backlinks, broken-link detection, and heading anchors.',
           'Tags from frontmatter and inline text drive tag-based navigation and usage summaries.',
           'The 3D graph visualizes notes, links, missing targets, agents, orphans, and local neighborhoods.',

@@ -1,5 +1,5 @@
 import { searchNotes } from '../search';
-import { getMarkdownBody } from '../markdown';
+import { getMarkdownBody } from '../markdown/parse';
 import type { InternalToolHandler, ToolInvocationResult, ToolExecutionContext } from '../../types';
 import { clampMaxResults, cleanString, validateAssignee } from './validation';
 

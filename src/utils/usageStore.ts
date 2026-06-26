@@ -1,11 +1,7 @@
 import type { AgentRun, ChatSession, Tool, VaultNote } from '../types';
 import { getAgentRunsFromNotes } from './agentRuns';
-import {
-  buildGraphData,
-  getBrokenLinks,
-  getOrphanNotes,
-  getWorkspaceEntityNotes,
-} from './markdown';
+import { buildGraphData, getBrokenLinks, getOrphanNotes } from './markdown/graph';
+import { getWorkspaceEntityNotes } from './markdown/entity';
 import { loadChatSessions } from './chatHistory';
 
 const SNAPSHOT_KEY = 'agent-vault-usage-snapshots';

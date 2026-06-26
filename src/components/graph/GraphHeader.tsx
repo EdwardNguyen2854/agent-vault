@@ -27,7 +27,7 @@ export function GraphHeader({ stats }: GraphHeaderProps) {
           </span>
           <div className="graph-stat-chip-body">
             <span className="graph-stat-chip-value">{stats.noteCount}</span>
-            <span className="graph-stat-chip-label">Notes</span>
+            <span className="graph-stat-chip-label">Workspaces</span>
           </div>
         </div>
         <div className="graph-stat-chip" role="listitem">

@@ -902,6 +902,119 @@ kbd {
   color: var(--primary);
 }
 
+.file-tree-ext-filter .filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-tree-ext-filter .filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--surface);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* Extension filter dialog */
+.ext-filter-dialog {
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  transform: scale(1);
+  opacity: 1;
+}
+
+.ext-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.ext-filter-actions .ghost-button {
+  height: 26px;
+  font-size: 11px;
+  padding: 0 10px;
+}
+
+.ext-filter-active-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ext-filter-group {
+  margin-bottom: var(--space-2);
+}
+
+.ext-filter-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: var(--space-1);
+}
+
+.ext-filter-group-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ext-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.ext-filter-item:hover {
+  background: var(--hover);
+}
+
+.ext-filter-item.checked {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.ext-filter-checkbox {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.ext-filter-item.checked .ext-filter-checkbox {
+  color: var(--primary);
+}
+
+.ext-filter-ext {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.ext-filter-count {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
 .file-tree {
   flex: 1;
   overflow-y: auto;

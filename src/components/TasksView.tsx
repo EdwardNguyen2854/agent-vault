@@ -22,7 +22,7 @@ import type {
   TaskItem,
   VaultNote,
 } from '../types';
-import { updateTaskAssignee, updateTaskCompletion, updateTaskLine } from '../utils/markdown';
+import { updateTaskAssignee, updateTaskCompletion, updateTaskLine } from '../utils/tasks';
 import { getNoteKey } from '../utils/noteKey';
 import { canWriteVaultNote, writeNote } from '../utils/vault';
 import { loadTasksView, saveTasksView, type TasksViewMode } from '../utils/preferences';

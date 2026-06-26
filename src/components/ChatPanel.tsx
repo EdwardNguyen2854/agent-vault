@@ -86,7 +86,8 @@ import {
 } from '../utils/chatHistory';
 import { taskSnapshotFromTask } from '../utils/taskConversations';
 import { canWriteVaultNote } from '../utils/vault';
-import { getWorkspaceEntityType, renderChatMarkdownToHtml } from '../utils/markdown';
+import { getWorkspaceEntityType } from '../utils/markdown/entity';
+import { renderChatMarkdownToHtml } from '../utils/markdown/render';
 import { runAgentChat } from '../utils/agentExecution';
 import {
   getAllTools,

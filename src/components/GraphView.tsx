@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { GitFork, Search, X } from 'lucide-react';
 import type { GraphFilterState, GraphNode, VaultNote } from '../types';
-import { resolveLinkTarget } from '../utils/markdown';
+import { resolveLinkTarget } from '../utils/markdown/graph';
 import { getNoteKey } from '../utils/noteKey';
 import {
   buildNotesTagsMap,

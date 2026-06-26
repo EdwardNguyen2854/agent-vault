@@ -1,6 +1,7 @@
 import type { Tool, ToolPermission, ToolRisk, VaultNote } from '../types';
 import { getNoteKey } from './noteKey';
-import { buildBacklinks, getWorkspaceEntityType } from './markdown';
+import { buildBacklinks } from './markdown/graph';
+import { getWorkspaceEntityType } from './markdown/entity';
 import { getInternalTools as getRegistryInternalTools } from './internalTools/registry';
 import { getCachedBridgeHealth } from './bridgeClient';
 import { getToolPermissionOverrides } from './permissions';

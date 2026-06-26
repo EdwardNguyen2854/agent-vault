@@ -156,7 +156,7 @@ export function TagsView({
             }}
           >
             {filter === 'all' && 'All'}
-            {filter === 'note' && 'Notes'}
+            {filter === 'note' && 'Workspaces'}
             {filter === 'folder' && 'Folders'}
             {filter === 'vault' && 'Vaults'}
             {filter === 'file' && 'Files'}

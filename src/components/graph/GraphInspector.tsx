@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { GraphNode, VaultNote } from '../../types';
 import { getNoteKey } from '../../utils/noteKey';
-import { buildBacklinks } from '../../utils/markdown';
+import { buildBacklinks } from '../../utils/markdown/graph';
 
 interface GraphInspectorProps {
   open: boolean;

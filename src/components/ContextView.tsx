@@ -23,7 +23,8 @@ import {
   saveAgentContextOverrides,
   setAgentContextItemDisabled,
 } from '../utils/context';
-import { getWorkspaceEntityType, resolveLinkTarget } from '../utils/markdown';
+import { getWorkspaceEntityType } from '../utils/markdown/entity';
+import { resolveLinkTarget } from '../utils/markdown/graph';
 import { getNoteKey } from '../utils/noteKey';
 import {
   loadContextSettings,

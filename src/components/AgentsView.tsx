@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VaultNote } from '../types';
-import { buildBacklinks, getWorkspaceEntityType } from '../utils/markdown';
+import { buildBacklinks } from '../utils/markdown/graph';
+import { getWorkspaceEntityType } from '../utils/markdown/entity';
 import { getNoteKey } from '../utils/noteKey';
 import { getModels } from '../utils/lmstudio';
 import { loadAIProviderConfig } from '../utils/settings';

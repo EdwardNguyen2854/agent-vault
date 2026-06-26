@@ -1,12 +1,7 @@
 import { Check, ChevronRight, PencilLine, X } from 'lucide-react';
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import {
-  renderMarkdownToHtml,
-  splitRawFrontmatter,
-  splitMarkdownBody,
-  renderBlockToHtml,
-  splitFrontmatter,
-} from '../utils/markdown';
+import { splitRawFrontmatter, splitFrontmatter } from '../utils/markdown/parse';
+import { renderMarkdownToHtml, splitMarkdownBody, renderBlockToHtml } from '../utils/markdown/render';
 import { handleMarkdownShortcut } from '../utils/markdownShortcuts';
 import { renderMermaidDiagrams } from './MermaidRenderer';
 import { renderExcalidrawDiagrams } from './ExcalidrawRenderer';

@@ -110,7 +110,7 @@ export function TopBar({
           title="Command center — Ctrl+K / Cmd+K"
         >
           <Command size={13} aria-hidden="true" />
-          <span>Search notes, commands, tags...</span>
+          <span>Search files, commands, tags...</span>
           <kbd>⌘K</kbd>
         </button>
       </div>

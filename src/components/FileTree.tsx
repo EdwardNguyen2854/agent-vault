@@ -1,5 +1,6 @@
 import {
   Bot,
+  CheckSquare,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -7,18 +8,21 @@ import {
   Copy,
   Edit2,
   ExternalLink,
+  File,
   FilePlus2,
   FileText,
   FolderPlus,
   Home,
   MousePointer2,
   Search,
+  SlidersHorizontal,
+  Square,
   Tag,
   Trash2,
   Users,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VaultFolder, VaultNote } from '../types';
 import { getNoteKey } from '../utils/noteKey';
 import { searchNotes } from '../utils/search';
@@ -387,7 +391,8 @@ function TreeItem({
           onMouseLeave={onHoverEnd}
           title={note.path}
         >
-          <span className="note-row-title">{note.title}</span>
+            {note.isBinary ? <File size={11} className="note-row-icon" /> : null}
+            <span className="note-row-title">{note.title}</span>
           {note.tags.length ? <Circle size={5} className="tag-dot" /> : null}
         </button>
       ))}
@@ -431,6 +436,112 @@ interface FolderContextMenuState {
 
 type ContextMenuState = NoteContextMenuState | FolderContextMenuState;
 
+const ALL_EXTENSIONS = ['md', 'txt', 'json', 'yaml', 'csv', 'pdf', 'doc', 'docx', 'ppt', 'pptx'];
+const ALL_EXTENSIONS_SET = new Set(ALL_EXTENSIONS);
+const EXTENSION_GROUPS: Array<{ label: string; extensions: string[] }> = [
+  { label: 'Text', extensions: ['md', 'txt', 'json', 'yaml', 'csv'] },
+  { label: 'Documents', extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx'] },
+];
+
+function ExtensionFilterModal({
+  allExtensions,
+  extensionCounts,
+  selected,
+  onToggle,
+  onSelectAll,
+  onClearAll,
+  onClose,
+}: {
+  allExtensions: string[];
+  extensionCounts: Map<string, number>;
+  selected: Set<string>;
+  onToggle: (ext: string) => void;
+  onSelectAll: () => void;
+  onClearAll: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="palette-backdrop visible" onMouseDown={onClose}>
+      <div
+        className="ext-filter-dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="dialog-header">
+          <SlidersHorizontal size={16} />
+          <span>Filter by extension</span>
+        </div>
+        <div className="dialog-body">
+          <div className="ext-filter-actions">
+            <button className="ghost-button" onClick={onSelectAll}>
+              Select All
+            </button>
+            <button className="ghost-button" onClick={onClearAll}>
+              Clear All
+            </button>
+            {selected.size > 0 && (
+              <span className="ext-filter-active-count">
+                {selected.size} active
+              </span>
+            )}
+          </div>
+          {EXTENSION_GROUPS.map((group) => (
+            <div key={group.label} className="ext-filter-group">
+              <div className="ext-filter-group-label">{group.label}</div>
+              <div className="ext-filter-group-items">
+                {group.extensions.map((ext) => {
+                  const count = extensionCounts.get(ext) ?? 0;
+                  const isChecked = selected.has(ext);
+                  return (
+                    <label key={ext} className={`ext-filter-item${isChecked ? ' checked' : ''}`}>
+                      <span
+                        className="ext-filter-checkbox"
+                        onClick={() => onToggle(ext)}
+                      >
+                        {isChecked ? <CheckSquare size={14} /> : <Square size={14} />}
+                      </span>
+                      <span className="ext-filter-ext">.{ext}</span>
+                      <span className="ext-filter-count">{count}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {allExtensions.some((ext) => !ALL_EXTENSIONS_SET.has(ext)) && (
+            <div className="ext-filter-group">
+              <div className="ext-filter-group-label">Other</div>
+              <div className="ext-filter-group-items">
+                {allExtensions
+                  .filter((ext) => !ALL_EXTENSIONS_SET.has(ext))
+                  .map((ext) => (
+                    <label
+                      key={ext}
+                      className={`ext-filter-item${selected.has(ext) ? ' checked' : ''}`}
+                    >
+                      <span
+                        className="ext-filter-checkbox"
+                        onClick={() => onToggle(ext)}
+                      >
+                        {selected.has(ext) ? <CheckSquare size={14} /> : <Square size={14} />}
+                      </span>
+                      <span className="ext-filter-ext">.{ext}</span>
+                      <span className="ext-filter-count">{extensionCounts.get(ext) ?? 0}</span>
+                    </label>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="dialog-footer">
+          <button className="primary-button" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FileTree({
   notes,
   folders = [],
@@ -465,15 +576,27 @@ export function FileTree({
     }
     return clampFileTreeWidth(FILE_TREE_DEFAULT);
   });
-  const [extFilter, setExtFilter] = useState<string | null>(null);
+  const [extFilter, setExtFilter] = useState<Set<string>>(new Set());
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const dragging = useRef(false);
   const previewTimeoutRef = useRef<number | null>(null);
   const hideTimeoutRef = useRef<number | null>(null);
 
-  const filteredByExt = extFilter ? notes.filter((n) => n.extension === extFilter) : notes;
+  const filteredByExt = extFilter.size > 0
+    ? notes.filter((n) => extFilter.has(n.extension))
+    : notes;
   const filteredNotes = search.trim()
     ? searchNotes(filteredByExt, search).map((r) => r.note)
     : filteredByExt;
+
+  const extensionCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const ext of ALL_EXTENSIONS) map.set(ext, 0);
+    for (const n of notes) {
+      if (map.has(n.extension)) map.set(n.extension, map.get(n.extension)! + 1);
+    }
+    return map;
+  }, [notes]);
 
   const tree = sortTree(buildTree(filteredNotes, folders));
 
@@ -722,7 +845,7 @@ export function FileTree({
   return (
     <aside className="file-tree-panel" aria-label="File tree">
       <div className="sidebar-section-title">
-        <span>Notes</span>
+        <span>Workspaces</span>
         <span>{search.trim() ? `${filteredNotes.length}/${notes.length}` : notes.length}</span>
         <button
           className="icon-btn"
@@ -741,14 +864,14 @@ export function FileTree({
           type="search"
           value={search}
           onChange={(event) => onSearchChange?.(event.target.value)}
-          placeholder="Filter notes"
-          aria-label="Filter notes"
+          placeholder="Filter workspaces"
+          aria-label="Filter workspaces"
         />
         {search.trim() && (
           <button
             className="file-tree-search-clear"
             onClick={() => onSearchChange?.('')}
-            aria-label="Clear note filter"
+            aria-label="Clear workspace filter"
           >
             <X size={11} />
           </button>
@@ -756,21 +879,32 @@ export function FileTree({
       </div>
 
       <div className="file-tree-ext-filter">
-        {(['md', 'txt', 'json', 'yaml', 'csv'] as const).map((ext) => (
-          <button
-            key={ext}
-            className={`ghost-button${extFilter === ext ? ' active' : ''}`}
-            onClick={() => setExtFilter(extFilter === ext ? null : ext)}
-          >
-            .{ext}
-          </button>
-        ))}
-        {extFilter && (
-          <button className="ghost-button" onClick={() => setExtFilter(null)}>
-            Clear
-          </button>
-        )}
+        <button
+          className={`ghost-button filter-toggle${extFilter.size > 0 ? ' active' : ''}`}
+          onClick={() => setFilterModalOpen(true)}
+          title="Filter by extension"
+        >
+          <SlidersHorizontal size={11} />
+          {extFilter.size > 0 && <span className="filter-count">{extFilter.size}</span>}
+        </button>
       </div>
+
+      {filterModalOpen && (
+        <ExtensionFilterModal
+          allExtensions={ALL_EXTENSIONS}
+          extensionCounts={extensionCounts}
+          selected={extFilter}
+          onToggle={(ext) => {
+            const next = new Set(extFilter);
+            if (next.has(ext)) next.delete(ext);
+            else next.add(ext);
+            setExtFilter(next);
+          }}
+          onSelectAll={() => setExtFilter(new Set(ALL_EXTENSIONS))}
+          onClearAll={() => setExtFilter(new Set())}
+          onClose={() => setFilterModalOpen(false)}
+        />
+      )}
 
       <div className="file-tree">
         {tree.map((node) => (

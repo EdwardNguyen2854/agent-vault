@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { VaultNote, ViewMode } from '../types';
-import { getWorkspaceEntityNotes, getWorkspaceEntityType } from '../utils/markdown';
+import { getWorkspaceEntityNotes, getWorkspaceEntityType } from '../utils/markdown/entity';
 import { getNoteKey } from '../utils/noteKey';
 import { searchNotes } from '../utils/search';
 
@@ -350,7 +350,7 @@ export function CommandCenter({
 
   const groupedResults = useMemo(() => {
     const groups: Array<{ id: ResultGroup; label: string; items: CommandItem[] }> = [
-      { id: 'notes', label: 'Notes', items: [] },
+      { id: 'notes', label: 'Files', items: [] },
       { id: 'commands', label: 'Commands', items: [] },
       { id: 'tasks', label: 'Tasks', items: [] },
       { id: 'tags', label: 'Tags', items: [] },

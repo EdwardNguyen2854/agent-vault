@@ -2,7 +2,7 @@ import { Bot, Calendar, CheckCircle2, ExternalLink, Flag, Pencil, Play, Search, 
 import { useMemo, useState } from 'react';
 import type { TaskItem, VaultNote } from '../types';
 import { getNoteKey } from '../utils/noteKey';
-import { updateTaskLine } from '../utils/markdown';
+import { updateTaskLine } from '../utils/tasks';
 import { canWriteVaultNote, writeNote } from '../utils/vault';
 import { TaskDetailModal } from './TaskDetailModal';
 

@@ -1,8 +1,9 @@
 import type { VaultFile, VaultFolder, VaultNote } from '../types';
-import { parseNoteContent } from './markdown';
+import { parseNoteContent } from './markdown/parse';
 import { normalizeVaultPath } from './paths';
 
-const markdownExtensions = new Set(['md', 'markdown']);
+const supportedExtensions = new Set(['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'csv', 'pdf', 'doc', 'docx', 'ppt', 'pptx']);
+const binaryExtensions = new Set(['pdf', 'doc', 'docx', 'ppt', 'pptx']);
 const ignoredDirectories = new Set(['.git', 'node_modules', 'dist', '.obsidian']);
 
 export interface VaultSource {
@@ -153,8 +154,12 @@ export function getExtension(name: string): string {
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-export function isMarkdownFile(name: string): boolean {
-  return markdownExtensions.has(getExtension(name));
+export function isSupportedFile(name: string): boolean {
+  return supportedExtensions.has(getExtension(name));
+}
+
+export function isBinaryExtension(name: string): boolean {
+  return binaryExtensions.has(getExtension(name));
 }
 
 export async function verifyPermission(
@@ -209,7 +214,7 @@ export async function scanDirectory(
       continue;
     }
 
-    if (child.kind === 'file' && isMarkdownFile(name)) {
+    if (child.kind === 'file' && isSupportedFile(name)) {
       const fileHandle = child as FileSystemFileHandle;
       const file = await fileHandle.getFile();
       files.push({
@@ -220,6 +225,7 @@ export async function scanDirectory(
         path: basePath ? `${basePath}/${name}` : name,
         name,
         extension: getExtension(name),
+        isBinary: isBinaryExtension(name),
         handle: fileHandle,
         updatedAt: file.lastModified,
         size: file.size,
@@ -237,6 +243,13 @@ export async function loadNotes(
   const files = await scanDirectory(rootHandle, source);
   const notes = await Promise.all(
     files.map(async (file) => {
+      if (file.isBinary) {
+        const blob = await file.handle.getFile();
+        return parseNoteContent({
+          ...file,
+          content: '',
+        });
+      }
       const blob = await file.handle.getFile();
       const content = await blob.text();
       return parseNoteContent({ ...file, content });
@@ -363,6 +376,7 @@ export async function createNote(
     path: normalized,
     name: fileName,
     extension: getExtension(fileName),
+    isBinary: false,
     handle: fileHandle,
     updatedAt: file.lastModified,
     size: file.size,
@@ -426,6 +440,7 @@ export async function renameNote(
     path: nextNormalized,
     name: newFileName,
     extension: getExtension(newFileName),
+    isBinary: note.isBinary,
     handle: newFileHandle,
     updatedAt: newFile.lastModified,
     size: newFile.size,
