@@ -16,6 +16,7 @@ import { memoryList } from './meta';
 import { vaultReadImage } from './readImage';
 import { vaultSaveImage } from './saveImage';
 import { vaultListFolders } from './listFolders';
+import { vaultCreateFolder, vaultDeleteFolder } from './folderTools';
 
 const handlers: InternalToolHandler[] = [
   vaultReadNote,
@@ -33,6 +34,8 @@ const handlers: InternalToolHandler[] = [
   vaultReadImage,
   vaultSaveImage,
   vaultListFolders,
+  vaultCreateFolder,
+  vaultDeleteFolder,
 ];
 
 const metadataByToolId: Record<string, Pick<Tool, 'permission' | 'risk'>> = {
@@ -51,6 +54,8 @@ const metadataByToolId: Record<string, Pick<Tool, 'permission' | 'risk'>> = {
   'memory.append': { permission: 'ask', risk: 'medium' },
   'note.create': { permission: 'ask', risk: 'medium' },
   'vault.list_folders': { permission: 'read-only', risk: 'low' },
+  'vault.create_folder': { permission: 'ask', risk: 'medium' },
+  'vault.delete_folder': { permission: 'ask', risk: 'medium' },
 };
 
 const handlerMap = new Map<string, InternalToolHandler>();

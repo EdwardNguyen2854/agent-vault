@@ -321,6 +321,7 @@ export async function createDirectory(
 export async function deleteDirectory(
   rootHandle: FileSystemDirectoryHandle,
   path: string,
+  options?: { recursive?: boolean },
 ): Promise<void> {
   const parts = path
     .split('/')
@@ -329,7 +330,7 @@ export async function deleteDirectory(
   const directoryName = parts.pop();
   if (!directoryName) throw new Error('Cannot delete vault root');
   const parent = await getDirectoryHandleByPath(rootHandle, parts);
-  await parent.removeEntry(directoryName, { recursive: true });
+  await parent.removeEntry(directoryName, { recursive: options?.recursive ?? true });
 }
 
 /**

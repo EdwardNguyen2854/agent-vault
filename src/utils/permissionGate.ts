@@ -2,6 +2,8 @@ import type { Agent, GateResult, Tool, ToolExecutionContext } from '../types';
 
 const WRITE_TOOL_IDS = new Set([
   'note.create',
+  'vault.create_folder',
+  'vault.delete_folder',
   'vault.create_task',
   'vault.update_note',
   'vault.append_to_note',
@@ -38,6 +40,13 @@ export function evaluateToolCall(
     return { decision: 'ask', reason: 'High-risk tool requires confirmation' };
   }
 
+  if (agentMode === 'read-only') {
+    if (writeCapable) {
+      return { decision: 'deny', reason: 'Agent read-only mode blocks write-capable tools' };
+    }
+    return { decision: 'allow', reason: 'Read-only gate allows read tools' };
+  }
+
   if (writeCapable) {
     if (writeMode === 'disabled') {
       return {
@@ -54,13 +63,6 @@ export function evaluateToolCall(
     if (ctx?.personalVaultSource?.readOnly) {
       return { decision: 'deny', reason: 'Personal vault is read-only' };
     }
-  }
-
-  if (agentMode === 'read-only') {
-    if (writeCapable) {
-      return { decision: 'deny', reason: 'Agent read-only mode blocks write-capable tools' };
-    }
-    return { decision: 'allow', reason: 'Read-only gate allows read tools' };
   }
 
   if (agentMode === 'vault-only') {
