@@ -20,9 +20,11 @@ export const vaultListFolders: InternalToolHandler = {
   handler: async (input, ctx): Promise<ToolInvocationResult> => {
     let notes = ctx.notes;
 
+    const hasParentPath = Object.prototype.hasOwnProperty.call(input, 'parent_path');
     const parentPathRaw = cleanString(input.parent_path);
-    if (parentPathRaw) {
-      const pathError = validatePlainPath(parentPathRaw, 'parent_path');
+    const parentPath = parentPathRaw.replace(/\/+$/, '');
+    if (hasParentPath) {
+      const pathError = validatePlainPath(parentPath, 'parent_path');
       if (pathError) return { success: false, error: pathError, durationMs: 0 };
     }
 
@@ -36,10 +38,9 @@ export const vaultListFolders: InternalToolHandler = {
     }
 
     let folders = deriveVaultFolders(notes);
-    if (parentPathRaw) {
-      const normalized = parentPathRaw.replace(/\/+$/, '');
+    if (parentPath) {
       folders = folders.filter(
-        (f) => f.path === normalized || f.path.startsWith(normalized + '/'),
+        (f) => f.path === parentPath || f.path.startsWith(parentPath + '/'),
       );
     }
 

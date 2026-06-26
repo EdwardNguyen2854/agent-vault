@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import type { VaultNote, ToolExecutionContext } from '../../types';
+import type { Agent, VaultNote, ToolExecutionContext } from '../../types';
+import { evaluateToolCall } from '../permissionGate';
 import { vaultListFolders } from './listFolders';
+import { getInternalTool } from './registry';
 
 function mockNote(overrides: Partial<VaultNote>): VaultNote {
   return {
@@ -92,12 +94,51 @@ describe('vault.list_folders', () => {
       mockNote({ path: 'Projects/Budget.md', name: 'Budget.md' }),
       mockNote({ path: 'Journal/Daily.md', name: 'Daily.md' }),
     ];
-    const result = await vaultListFolders.handler({ parent_path: 'Projects' }, makeCtx(notes));
+    const result = await vaultListFolders.handler({ parent_path: 'Projects/' }, makeCtx(notes));
 
     expect(result.success).toBe(true);
     const folders = result.output as Array<{ path: string }> | undefined;
     expect(folders).toBeDefined();
     const paths = (folders as Array<{ path: string }>).map((f) => f.path).sort();
     expect(paths).toEqual(['Projects', 'Projects/Research']);
+  });
+
+  it('rejects root parent_path after trailing slash normalization', async () => {
+    const notes = [mockNote({ path: 'Projects/Budget.md', name: 'Budget.md' })];
+    const result = await vaultListFolders.handler({ parent_path: '/' }, makeCtx(notes));
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('parent_path is required');
+  });
+
+  it('registers read-only low-risk metadata', () => {
+    const tool = getInternalTool('vault.list_folders');
+
+    expect(tool).toBeDefined();
+    expect(tool!.permission).toBe('read-only');
+    expect(tool!.risk).toBe('low');
+  });
+
+  it('is allowed for an agent in read-only tool mode', () => {
+    const tool = getInternalTool('vault.list_folders');
+    const agent: Agent = {
+      id: 'agent-1',
+      name: 'Research Agent',
+      role: 'researcher',
+      status: 'active',
+      skills: [],
+      tools: ['vault.list_folders'],
+      memory: [],
+      permissions: {
+        tool_mode: 'read-only',
+        write_mode: 'disabled',
+      },
+    };
+
+    expect(tool).toBeDefined();
+    expect(evaluateToolCall(tool!, agent, makeCtx([]))).toEqual({
+      decision: 'allow',
+      reason: 'Read-only gate allows read tools',
+    });
   });
 });
