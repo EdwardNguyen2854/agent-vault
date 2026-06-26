@@ -6,6 +6,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
 
 :root {
   color-scheme: light;
@@ -104,7 +105,7 @@
   --file-tree-width-effective: clamp(160px, var(--file-tree-width), min(500px, 34vw));
   --chat-width: 360px;
   --topbar-height: 52px;
-  --supergraphic-height: 3px;
+  --supergraphic-height: 6px;
   --statusbar-height: 22px;
 }
 
@@ -252,20 +253,16 @@ kbd {
   height: auto;
   min-height: 0;
   display: grid;
-  grid-template-rows: var(--topbar-height) auto minmax(0, 1fr) var(--statusbar-height);
+  grid-template-rows: var(--supergraphic-height) var(--topbar-height) auto minmax(0, 1fr) var(--statusbar-height);
   overflow: hidden;
   background: radial-gradient(circle at 80% 0%, var(--primary-soft), transparent 28rem), var(--bg);
 }
 
 /* ============================================
-   SUPERGRAPHIC — thin decorative top line
+   SUPERGRAPHIC — full-width gradient banner
    ============================================ */
 .supergraphic {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+  grid-row: 1;
   width: 100%;
   height: var(--supergraphic-height);
   overflow: hidden;
@@ -276,14 +273,14 @@ kbd {
 .supergraphic svg {
   display: block;
   width: 100%;
-  height: 3px;
+  height: 100%;
 }
 
 /* ============================================
    VAULT WRITE-GRANT BANNER
    ============================================ */
 .vault-write-banner {
-  grid-row: 2;
+  grid-row: 3;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -320,7 +317,7 @@ kbd {
    ============================================ */
 .topbar {
   position: relative;
-  grid-row: 1;
+  grid-row: 2;
   z-index: 60;
   display: flex;
   align-items: center;
@@ -631,7 +628,7 @@ kbd {
    WORKSPACE LAYOUT
    ============================================ */
 .workspace {
-  grid-row: 3;
+  grid-row: 4;
   display: grid;
   grid-template-columns: var(--sidebar-nav-width) var(--file-tree-width-effective) minmax(0, 1fr);
   min-width: 0;
@@ -1862,6 +1859,681 @@ button.stat-card:hover {
 .positive-message {
   color: var(--positive) !important;
   font-size: 12px !important;
+}
+
+/* ============================================
+   DASHBOARD — Layout & Theme
+   ============================================ */
+
+.dash {
+  padding: 28px 32px;
+  min-height: 100%;
+}
+
+/* ── Period toggle ── */
+
+.dash-period {
+  display: flex;
+  gap: 2px;
+  background: var(--border-light);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.dash-period-pill {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash-period-pill:hover {
+  color: var(--text);
+}
+
+.dash-period-pill.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.dash-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 140ms ease;
+  white-space: nowrap;
+}
+
+.dash-action:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.dash-action svg {
+  opacity: 0.7;
+}
+
+/* ── Metrics Row ── */
+
+.dash-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1100px) {
+  .dash-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .dash-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.dash-metric {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color 200ms ease;
+}
+
+.dash-metric:hover {
+  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+}
+
+.dash-metric-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.dash-metric-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dash-metric-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.dash-metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.dash-metric-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Primary Charts Row ── */
+
+.dash-charts-primary {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .dash-charts-primary {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dash-chart-wide,
+.dash-chart-narrow {
+  display: flex;
+}
+
+.dash-chart-wide {
+  min-width: 0;
+}
+
+.dash-chart-narrow {
+  min-width: 0;
+}
+
+.dash-chart-wide .chart-card,
+.dash-chart-narrow .chart-card {
+  width: 100%;
+}
+
+/* ── Bar Charts Row ── */
+
+.dash-bars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .dash-bars {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dash-bars .chart-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-bars .chart-card-body {
+  flex: 1;
+}
+
+/* ── Secondary Row (notes + health) ── */
+
+.dash-secondary {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .dash-secondary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Bottom Chart ── */
+
+.dash-chart-bottom {
+  margin-bottom: 0;
+}
+
+/* ── Note List (recent notes) ── */
+
+.dash-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash-note-row:hover {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.dash-note-row svg {
+  color: var(--muted);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.dash-note-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dash-note-row-body strong {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-note-row-body span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-note-row time {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ── Vault Health ── */
+
+.dash-health {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dash-health-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash-health-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 2px;
+}
+
+.dash-health-head svg {
+  opacity: 0.6;
+}
+
+.dash-health-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.dash-health-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-health-item {
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash-health-item:hover {
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+.dash-health-item small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.dash-empty-text {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 8px 0;
+}
+
+/* ── Empty Chart State ── */
+
+.dash-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  border: 1px dashed var(--border-light);
+  border-radius: 6px;
+  margin: 4px 0;
+}
+
+.dash-chart-empty span {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── Chart Card Overrides ── */
+
+.dash .chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+
+.dash .chart-card-header {
+  padding: 14px 16px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dash .chart-card-header > div:first-child {
+  min-width: 0;
+}
+
+.dash .chart-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.dash .chart-card-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 1px 0 0;
+}
+
+.dash .chart-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dash .chart-card-period {
+  display: flex;
+  gap: 2px;
+  background: var(--border-light);
+  border-radius: 5px;
+  padding: 2px;
+}
+
+.dash .chart-period-pill {
+  font: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash .chart-period-pill:hover {
+  color: var(--text);
+}
+
+.dash .chart-period-pill.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.dash .chart-card-body {
+  padding: 10px 16px 14px;
+}
+
+.dash .chart-view-all {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash .chart-view-all:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.dash .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash .icon-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ── Chart Visuals ── */
+
+.dash .line-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dash .chart-axis-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.dash .chart-legend {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.dash .chart-legend-item {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dash .chart-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.dash .donut-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash .donut-center-value {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.dash .donut-center-label {
+  fill: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dash .donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: center;
+}
+
+.dash .donut-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.dash .donut-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.dash .donut-legend-value {
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.dash .bar-chart-horizontal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash .bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.dash .bar-row:hover {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.dash .bar-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+  width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.dash .bar-track {
+  flex: 1;
+  height: 14px;
+  background: var(--border-light);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  min-width: 40px;
+}
+
+.dash .bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 300ms ease;
+}
+
+.dash .bar-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  width: 64px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash .bar-value small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.dash .chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  gap: 4px;
+}
+
+.dash .chart-empty svg {
+  width: 100%;
+  max-width: 200px;
+  opacity: 0.3;
+}
+
+.dash .chart-empty span {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
 }
 
 pre {
@@ -8826,7 +9498,7 @@ pre code.language-excalidraw {
    STATUSBAR
    ============================================ */
 .statusbar {
-  grid-row: 4;
+  grid-row: 5;
   z-index: 5;
   display: flex;
   justify-content: space-between;

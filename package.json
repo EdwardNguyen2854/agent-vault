@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "VITE_BASE=/ vite --host 0.0.0.0",
+    "dev": "cross-env VITE_BASE=/ vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "lint": "tsc --noEmit",
@@ -19,7 +19,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@excalidraw/excalidraw": "^0.17.1-08b13f9",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@vitejs/plugin-react": "6.0.2",
     "dompurify": "^3.4.11",
     "lucide-react": "1.17.0",
@@ -38,6 +38,7 @@
     "@types/react-dom": "19.2.3",
     "@types/three": "0.184.1",
     "@vitest/ui": "^4.1.9",
+    "cross-env": "^10.1.0",
     "jsdom": "^29.1.1",
     "prettier": "3.5.3",
     "typescript": "6.0.3",
