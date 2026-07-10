@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { checkConnection, getModels, testConnection, type LMStudioConfig } from '../utils/lmstudio';
+import { getModels as getMiniMaxModels, testConnection as testMiniMaxConnection, type MiniMaxConfig } from '../utils/minimax';
 import { loadLastVaultName } from '../utils/preferences';
 import type { ThemeMode } from '../utils/preferences';
 import {
@@ -181,14 +182,19 @@ export function SettingsView({
     saveAgentRunsSettings(agentRunsSettings);
   }, [agentRunsSettings]);
 
-  // Load models when base URL changes
+  // Load models for the current provider
   const loadAvailableModels = useCallback(
     async (baseUrl: string) => {
       setModelsLoading(true);
       setModelsError('');
       try {
-        const models = await getModels({ ...aiConfig.lmStudio, baseUrl });
-        setAvailableModels(models);
+        if (aiConfig.provider === 'minimax') {
+          const models = await getMiniMaxModels({ ...aiConfig.minimax, baseUrl });
+          setAvailableModels(models);
+        } else {
+          const models = await getModels({ ...aiConfig.lmStudio, baseUrl });
+          setAvailableModels(models);
+        }
       } catch (err) {
         setModelsError('Failed to load models');
         setAvailableModels([]);
@@ -196,18 +202,24 @@ export function SettingsView({
         setModelsLoading(false);
       }
     },
-    [aiConfig.lmStudio],
+    [aiConfig.provider, aiConfig.lmStudio, aiConfig.minimax],
   );
 
   // Auto-pick the first available model when none is configured
   useEffect(() => {
-    if (availableModels.length > 0 && !aiConfig.lmStudio.modelName) {
+    if (availableModels.length === 0) return;
+    if (aiConfig.provider === 'minimax' && !aiConfig.minimax.modelName) {
+      setAIConfig((prev) => ({
+        ...prev,
+        minimax: { ...prev.minimax, modelName: availableModels[0] },
+      }));
+    } else if (aiConfig.provider !== 'minimax' && !aiConfig.lmStudio.modelName) {
       setAIConfig((prev) => ({
         ...prev,
         lmStudio: { ...prev.lmStudio, modelName: availableModels[0] },
       }));
     }
-  }, [availableModels, aiConfig.lmStudio.modelName]);
+  }, [availableModels, aiConfig.provider, aiConfig.lmStudio.modelName, aiConfig.minimax.modelName]);
 
   // Test connection handler
   const handleTestConnection = async () => {
@@ -216,15 +228,22 @@ export function SettingsView({
     setDetectedModel('');
 
     try {
-      const result = await testConnection(aiConfig.lmStudio);
+      let result: { success: boolean; error?: string; model?: string };
+
+      if (aiConfig.provider === 'minimax') {
+        result = await testMiniMaxConnection(aiConfig.minimax);
+      } else {
+        result = await testConnection(aiConfig.lmStudio);
+      }
 
       if (result.success) {
         setConnectionStatus('success');
         setConnectionMessage('Connected successfully!');
-        setDetectedModel(result.model || aiConfig.lmStudio.modelName);
+        setDetectedModel(result.model || (aiConfig.provider === 'minimax' ? aiConfig.minimax.modelName : aiConfig.lmStudio.modelName));
 
-        // Refresh models list
-        loadAvailableModels(aiConfig.lmStudio.baseUrl);
+        loadAvailableModels(
+          aiConfig.provider === 'minimax' ? aiConfig.minimax.baseUrl : aiConfig.lmStudio.baseUrl,
+        );
       } else {
         setConnectionStatus('error');
         setConnectionMessage(result.error || 'Connection failed');
@@ -240,6 +259,16 @@ export function SettingsView({
     setAIConfig((prev) => ({
       ...prev,
       lmStudio: { ...prev.lmStudio, ...updates },
+    }));
+    setConnectionStatus('idle');
+    setConnectionMessage('');
+  };
+
+  // Update MiniMax config
+  const updateMiniMaxConfig = (updates: Partial<MiniMaxConfig>) => {
+    setAIConfig((prev) => ({
+      ...prev,
+      minimax: { ...prev.minimax, ...updates },
     }));
     setConnectionStatus('idle');
     setConnectionMessage('');
@@ -320,7 +349,7 @@ export function SettingsView({
               </h3>
               <p style={{ marginBottom: 16, color: 'var(--muted)', fontSize: 13 }}>
                 Configure your AI backend for Agent Vault v2 functionality. LM Studio provides a
-                local, private inference server.
+                local, private inference server. MiniMax provides cloud-based AI with API key authentication.
               </p>
 
               {/* Provider Selection */}
@@ -335,6 +364,7 @@ export function SettingsView({
                   }
                 >
                   <option value="lmstudio">LM Studio</option>
+                  <option value="minimax">MiniMax</option>
                   <option value="openai" disabled>
                     OpenAI (coming soon)
                   </option>
@@ -442,6 +472,132 @@ export function SettingsView({
                         <span>{connectionMessage}</span>
                         {detectedModel && (
                           <span className="model-detected">Detected: {detectedModel}</span>
+                        )}
+                      </div>
+                    )}
+                    {connectionStatus === 'error' && (
+                      <div className="connection-status error">
+                        <span>{connectionMessage}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* MiniMax Configuration */}
+              {aiConfig.provider === 'minimax' && (
+                <>
+                  {/* API Key */}
+                  <div className="settings-field">
+                    <label htmlFor="minimax-api-key">API Key</label>
+                    <input
+                      id="minimax-api-key"
+                      type="password"
+                      className="settings-input"
+                      value={aiConfig.minimax.apiKey}
+                      onChange={(e) => updateMiniMaxConfig({ apiKey: e.target.value })}
+                      placeholder="Enter your MiniMax API key"
+                    />
+                    <span className="settings-hint">
+                      Get your API key from the MiniMax platform.
+                    </span>
+                  </div>
+
+                  {/* Base URL */}
+                  <div className="settings-field">
+                    <label htmlFor="minimax-base-url">Base URL</label>
+                    <input
+                      id="minimax-base-url"
+                      type="text"
+                      className="settings-input"
+                      value={aiConfig.minimax.baseUrl}
+                      onChange={(e) => updateMiniMaxConfig({ baseUrl: e.target.value })}
+                      placeholder="https://api.minimax.chat/v1"
+                    />
+                  </div>
+
+                  {/* Model Picker */}
+                  <div className="settings-field">
+                    <label htmlFor="minimax-model-select">Model</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <select
+                        id="minimax-model-select"
+                        className="settings-select"
+                        style={{ flex: 1 }}
+                        value={aiConfig.minimax.modelName}
+                        onChange={(e) => updateMiniMaxConfig({ modelName: e.target.value })}
+                        disabled={modelsLoading}
+                      >
+                        {modelsLoading ? (
+                          <option value="">Loading models...</option>
+                        ) : availableModels.length > 0 ? (
+                          <>
+                            <option value="">Select a model...</option>
+                            {availableModels.map((model) => (
+                              <option key={model} value={model}>
+                                {model}
+                              </option>
+                            ))}
+                          </>
+                        ) : (
+                          <option value={aiConfig.minimax.modelName || 'MiniMax-Text-01'}>
+                            {aiConfig.minimax.modelName || 'MiniMax-Text-01'}
+                          </option>
+                        )}
+                      </select>
+                      <button
+                        className="ghost-button"
+                        onClick={() => loadAvailableModels(aiConfig.minimax.baseUrl)}
+                        disabled={modelsLoading || !aiConfig.minimax.apiKey}
+                        title="Refresh models"
+                      >
+                        <Globe size={14} />
+                      </button>
+                    </div>
+                    {modelsError && <span className="settings-error">{modelsError}</span>}
+                    {!modelsLoading && !modelsError && availableModels.length === 0 && !aiConfig.minimax.apiKey && (
+                      <span className="settings-hint">
+                        Enter an API key to fetch available models.
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Streaming Toggle */}
+                  <div className="settings-field">
+                    <label className="settings-toggle-label">
+                      <span>Streaming Responses</span>
+                      <button
+                        className={`toggle-button ${aiConfig.minimax.streaming ? 'active' : ''}`}
+                        onClick={() =>
+                          updateMiniMaxConfig({ streaming: !aiConfig.minimax.streaming })
+                        }
+                        type="button"
+                      >
+                        {aiConfig.minimax.streaming ? (
+                          <ToggleRight size={20} />
+                        ) : (
+                          <ToggleLeft size={20} />
+                        )}
+                        <span>{aiConfig.minimax.streaming ? 'On' : 'Off'}</span>
+                      </button>
+                    </label>
+                  </div>
+
+                  {/* Test Connection */}
+                  <div className="settings-field">
+                    <button
+                      className={`primary-button ${connectionStatus === 'testing' ? 'loading' : ''}`}
+                      onClick={handleTestConnection}
+                      disabled={connectionStatus === 'testing'}
+                    >
+                      <TestTube size={14} />
+                      {connectionStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+                    </button>
+                    {connectionStatus === 'success' && (
+                      <div className="connection-status success">
+                        <span>{connectionMessage}</span>
+                        {detectedModel && (
+                          <span className="model-detected">Model: {detectedModel}</span>
                         )}
                       </div>
                     )}

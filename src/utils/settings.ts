@@ -1,4 +1,5 @@
 import { defaultLMStudioConfig, type LMStudioConfig } from './lmstudio';
+import { defaultMiniMaxConfig, type MiniMaxConfig } from './minimax';
 
 export const AI_CONFIG_KEY = 'agent-vault-ai-config';
 export const CONTEXT_SETTINGS_KEY = 'agent-vault-context-settings';
@@ -9,11 +10,12 @@ export const AGENT_RUNS_KEY = 'agent-vault-agent-runs';
 export const PROPERTIES_SETTINGS_KEY = 'agent-vault-properties-settings';
 export const CHAT_SETTINGS_KEY = 'agent-vault-chat-settings';
 
-export type AIProvider = 'lmstudio' | 'openai' | 'anthropic';
+export type AIProvider = 'lmstudio' | 'openai' | 'anthropic' | 'minimax';
 
 export interface AIProviderConfig {
   provider: AIProvider;
   lmStudio: LMStudioConfig;
+  minimax: MiniMaxConfig;
 }
 
 export interface UIContextSettings {
@@ -82,10 +84,13 @@ export function saveJson<T>(key: string, value: T): void {
 }
 
 export function loadAIProviderConfig(): AIProviderConfig {
-  return loadJson<AIProviderConfig>(AI_CONFIG_KEY, {
-    provider: 'lmstudio',
-    lmStudio: defaultLMStudioConfig,
-  });
+  const stored = loadJson<Partial<AIProviderConfig>>(AI_CONFIG_KEY, {});
+
+  return {
+    provider: stored.provider ?? 'lmstudio',
+    lmStudio: { ...defaultLMStudioConfig, ...(stored.lmStudio ?? {}) },
+    minimax: { ...defaultMiniMaxConfig, ...(stored.minimax ?? {}) },
+  };
 }
 
 export function saveAIProviderConfig(config: AIProviderConfig): void {

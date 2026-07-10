@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ChatMessage } from '../types';
+import type { ChatMessage, VaultNote } from '../types';
 import { createFakeAdapter, type FakeAdapterOptions } from './modelAdapter';
 import { runSimpleChat, runAgentChat } from './agentExecution';
 import type { ApprovalAdapter, ApprovalDecision, ApprovalRequest, ApprovalResult } from './approvalAdapter';
@@ -618,6 +618,54 @@ describe('runAgentChat (with tools)', () => {
     const ids = (chatSpy.mock.calls[0][0].tools ?? []).map((tool) => tool.function.name);
     expect(ids).toContain('vault.read_note');
     expect(ids).not.toContain('vault.create_folder');
+  });
+
+  it('should omit inactive tools from the model tool list', async () => {
+    const adapter = createFakeAdapter({ content: 'ok', finishReason: 'stop' });
+    const chatSpy = vi.spyOn(adapter, 'chat');
+    const inactiveToolNote = {
+      vaultId: 'test-vault',
+      vaultName: 'Test Vault',
+      vaultRole: 'personal',
+      readOnly: false,
+      path: 'Tools/Offline.md',
+      name: 'Offline.md',
+      extension: '.md',
+      isBinary: false,
+      handle: {} as FileSystemFileHandle,
+      updatedAt: Date.now(),
+      size: 0,
+      title: 'Offline Tool',
+      content: 'An unavailable tool',
+      links: [],
+      tags: [],
+      frontmatter: {
+        type: 'tool',
+        provider: 'mcp',
+        server: 'offline-server',
+        tool_id: 'offline.tool',
+        status: 'inactive',
+        permission: 'read-only',
+      },
+      tasks: [],
+      headings: [],
+    } satisfies VaultNote;
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Hi', timestamp: Date.now() }],
+        prompt: 'Hi',
+        notes: [inactiveToolNote],
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    const ids = (chatSpy.mock.calls[0][0].tools ?? []).map((tool) => tool.function.name);
+    expect(ids).not.toContain('offline.tool');
   });
 
   it('should handle cancellation during tool loop', async () => {

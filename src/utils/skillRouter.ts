@@ -7,7 +7,13 @@ export async function classifyIntent(message: string, skills: Skill[]): Promise<
   }
 
   const aiConfig = loadAIProviderConfig();
-  if (aiConfig.provider !== 'lmstudio' || !aiConfig.lmStudio.modelName) {
+  const isMiniMax = aiConfig.provider === 'minimax';
+
+  if (isMiniMax) {
+    if (!aiConfig.minimax.modelName || !aiConfig.minimax.apiKey) {
+      return { skillId: null, confidence: 'low' };
+    }
+  } else if (aiConfig.provider !== 'lmstudio' || !aiConfig.lmStudio.modelName) {
     return { skillId: null, confidence: 'low' };
   }
 
@@ -34,12 +40,20 @@ Be conservative with "high" confidence - only use it when the message clearly re
     { role: 'user' as const, content: message },
   ];
 
+  const baseUrl = isMiniMax ? aiConfig.minimax.baseUrl : aiConfig.lmStudio.baseUrl;
+  const modelName = isMiniMax ? aiConfig.minimax.modelName : aiConfig.lmStudio.modelName;
+
   try {
-    const response = await fetch(`${aiConfig.lmStudio.baseUrl}/chat/completions`, {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (isMiniMax) {
+      headers['Authorization'] = `Bearer ${aiConfig.minimax.apiKey}`;
+    }
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
-        model: aiConfig.lmStudio.modelName,
+        model: modelName,
         messages,
         temperature: 0.1,
         max_tokens: 100,

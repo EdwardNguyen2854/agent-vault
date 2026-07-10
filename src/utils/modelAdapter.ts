@@ -11,6 +11,8 @@ import type {
   OpenAITool,
 } from '../types';
 import { sendChatRequest } from './lmstudio';
+import { sendChatRequest as sendMiniMaxChatRequest } from './minimax';
+import type { AIProviderConfig } from './settings';
 
 export interface ModelAdapterChatOptions {
   baseUrl: string;
@@ -18,6 +20,7 @@ export interface ModelAdapterChatOptions {
   messages: ChatMessage[];
   tools?: OpenAITool[];
   streaming: boolean;
+  apiKey?: string;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
@@ -33,6 +36,27 @@ export interface ModelAdapter {
 export const lmStudioAdapter: ModelAdapter = {
   async chat(options: ModelAdapterChatOptions): Promise<ChatRequestResult> {
     return sendChatRequest({
+      baseUrl: options.baseUrl,
+      modelName: options.model,
+      streaming: options.streaming,
+      messages: options.messages,
+      tools: options.tools,
+      signal: options.signal,
+      onChunk: options.onChunk,
+    });
+  },
+};
+
+/**
+ * MiniMax adapter - wraps sendChatRequest from minimax.ts
+ */
+export const miniMaxAdapter: ModelAdapter = {
+  async chat(options: ModelAdapterChatOptions): Promise<ChatRequestResult> {
+    if (!options.apiKey) {
+      throw new Error('MiniMax API key is required. Add one in Settings > AI Provider.');
+    }
+    return sendMiniMaxChatRequest({
+      apiKey: options.apiKey,
       baseUrl: options.baseUrl,
       modelName: options.model,
       streaming: options.streaming,
@@ -125,3 +149,10 @@ export function createFakeAdapter(fakeOptions: FakeAdapterOptions): ModelAdapter
  * Default adapter is LM Studio
  */
 export const defaultModelAdapter: ModelAdapter = lmStudioAdapter;
+
+/**
+ * Returns the appropriate adapter based on the current AI provider config.
+ */
+export function getModelAdapter(config: AIProviderConfig): ModelAdapter {
+  return config.provider === 'minimax' ? miniMaxAdapter : lmStudioAdapter;
+}

@@ -15,6 +15,7 @@ import { buildBacklinks } from '../utils/markdown/graph';
 import { getWorkspaceEntityType } from '../utils/markdown/entity';
 import { getNoteKey } from '../utils/noteKey';
 import { getModels } from '../utils/lmstudio';
+import { getModels as getMiniMaxModels } from '../utils/minimax';
 import { loadAIProviderConfig } from '../utils/settings';
 import { loadAgentModels, saveAgentModel } from '../utils/preferences';
 
@@ -72,14 +73,24 @@ export function AgentsView({ notes, onSelectNote }: AgentsViewProps) {
     loadAgentModels(),
   );
 
-  // Fetch available models from LM Studio
+  // Fetch available models for the current provider
   const refreshModels = useCallback(async () => {
     const config = loadAIProviderConfig();
-    if (config.provider !== 'lmstudio' || !config.lmStudio.baseUrl) return;
     setModelsLoading(true);
     try {
-      const models = await getModels(config.lmStudio);
-      setAvailableModels(models);
+      if (config.provider === 'minimax') {
+        if (!config.minimax.apiKey) {
+          setAvailableModels([]);
+          return;
+        }
+        const models = await getMiniMaxModels(config.minimax);
+        setAvailableModels(models);
+      } else if (config.provider === 'lmstudio' && config.lmStudio.baseUrl) {
+        const models = await getModels(config.lmStudio);
+        setAvailableModels(models);
+      } else {
+        setAvailableModels([]);
+      }
     } catch {
       setAvailableModels([]);
     } finally {

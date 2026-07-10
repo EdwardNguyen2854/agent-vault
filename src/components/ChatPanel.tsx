@@ -66,6 +66,7 @@ import {
   sendChatMessage,
 } from '../utils/lmstudio';
 import { loadAIProviderConfig, loadContextSettings } from '../utils/settings';
+import { getModelAdapter } from '../utils/modelAdapter';
 import { classifyIntent } from '../utils/skillRouter';
 import type { ChatLayout } from '../utils/settings';
 import {
@@ -271,6 +272,7 @@ function taskTextFromResponse(prompt: string, agentName: string): string {
 
 function getProviderLabel(provider: string): string {
   if (provider === 'lmstudio') return 'LM Studio';
+  if (provider === 'minimax') return 'MiniMax';
   if (provider === 'openai') return 'OpenAI';
   if (provider === 'anthropic') return 'Anthropic';
   return provider;
@@ -581,9 +583,13 @@ export function ChatPanel({
   const modelName =
     aiConfig.provider === 'lmstudio'
       ? aiConfig.lmStudio.modelName || 'No model selected'
-      : 'Not configured';
+      : aiConfig.provider === 'minimax'
+        ? aiConfig.minimax.modelName || 'MiniMax-Text-01'
+        : 'Not configured';
   const modelLabel = `${getProviderLabel(aiConfig.provider)} · ${modelName}`;
-  const modelReady = aiConfig.provider === 'lmstudio' && Boolean(aiConfig.lmStudio.modelName);
+  const modelReady =
+    (aiConfig.provider === 'lmstudio' && Boolean(aiConfig.lmStudio.modelName)) ||
+    (aiConfig.provider === 'minimax' && Boolean(aiConfig.minimax.apiKey));
 
   const agents = useMemo<AgentInfo[]>(() => {
     return notes
@@ -1245,12 +1251,18 @@ export function ChatPanel({
       completedAt: number;
     }> => {
       const aiConfig = loadAIProviderConfig();
-      if (aiConfig.provider !== 'lmstudio') {
-        throw new Error('Only LM Studio is enabled in v0.1.0. Choose LM Studio in Settings.');
+
+      const isMiniMax = aiConfig.provider === 'minimax';
+      const modelName = isMiniMax ? aiConfig.minimax.modelName : aiConfig.lmStudio.modelName;
+      const baseUrl = isMiniMax ? aiConfig.minimax.baseUrl : aiConfig.lmStudio.baseUrl;
+      const streaming = isMiniMax ? aiConfig.minimax.streaming : aiConfig.lmStudio.streaming;
+
+      if (!modelName) {
+        throw new Error('No model selected. Choose a model in Settings > AI Provider.');
       }
 
-      if (!aiConfig.lmStudio.modelName) {
-        throw new Error('No model selected. Choose a model in Settings > AI Provider.');
+      if (isMiniMax && !aiConfig.minimax.apiKey) {
+        throw new Error('MiniMax API key missing. Add one in Settings > AI Provider.');
       }
 
       // Build agent from selected agent note
@@ -1342,9 +1354,10 @@ export function ChatPanel({
       try {
         const result = await runAgentChat(
           {
-            baseUrl: aiConfig.lmStudio.baseUrl,
-            modelName: aiConfig.lmStudio.modelName,
-            streaming: aiConfig.lmStudio.streaming,
+            baseUrl,
+            modelName,
+            streaming,
+            apiKey: isMiniMax ? aiConfig.minimax.apiKey : undefined,
             agent,
             messages: providerMessages,
             prompt,
@@ -1354,6 +1367,7 @@ export function ChatPanel({
             personalRootHandle,
             personalVaultSource,
             contextItems: effectiveContextItems,
+            modelAdapter: getModelAdapter(aiConfig),
             onChunk: (chunk) => {
               setMessages((prev) =>
                 prev.map((message) =>
