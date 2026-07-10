@@ -2,15 +2,23 @@ import { Bot, Calendar, CheckCircle2, ExternalLink, Flag, Pencil, Play, Search, 
 import { useMemo, useState } from 'react';
 import type { TaskItem, VaultNote } from '../types';
 import { getNoteKey } from '../utils/noteKey';
-import { updateTaskLine } from '../utils/tasks';
-import { canWriteVaultNote, writeNote } from '../utils/vault';
-import { TaskDetailModal } from './TaskDetailModal';
+import { TaskDetailModal, agentsFromNotes, type AgentOption } from './TaskDetailModal';
+import {
+  defaultTaskDetail,
+  ensureTaskDetail,
+  type TaskDetail,
+  type TaskDetailsStore,
+} from '../utils/taskDetails';
 
 interface TaskQueueProps {
   notes: VaultNote[];
   onSelectNote: (key: string) => void;
   onRunAgent: (task: TaskItem, agent: VaultNote) => void;
   onNotesChange: (notes: VaultNote[]) => void;
+  taskDetailsStore: TaskDetailsStore;
+  onTaskDetailSave: (task: TaskItem, next: TaskDetail) => Promise<void> | void;
+  currentAuthorId: string;
+  onOpenTaskConversation?: (task: TaskItem) => void;
 }
 
 type StatusFilter = 'all' | 'todo' | 'doing' | 'done';
@@ -24,6 +32,11 @@ interface TaskGroupProps {
   onSelectNote: (key: string) => void;
   onRunAgent: (task: TaskItem, agent: VaultNote) => void;
   onNotesChange: (notes: VaultNote[]) => void;
+  taskDetailsStore: TaskDetailsStore;
+  onTaskDetailSave: (task: TaskItem, next: TaskDetail) => Promise<void> | void;
+  currentAuthorId: string;
+  agentOptions: AgentOption[];
+  onOpenTaskConversation?: (task: TaskItem) => void;
 }
 
 function getPriorityValue(priority: string | undefined): number {
@@ -67,8 +80,13 @@ function TaskCard({
   onSelectNote,
   onRunAgent,
   agentNote,
-  notes,
-  onNotesChange,
+  notes: _notes,
+  onNotesChange: _onNotesChange,
+  taskDetailsStore,
+  onTaskDetailSave,
+  currentAuthorId,
+  agentOptions,
+  onOpenTaskConversation,
 }: {
   task: TaskItem;
   onSelectNote: (key: string) => void;
@@ -76,6 +94,11 @@ function TaskCard({
   agentNote: VaultNote | null;
   notes: VaultNote[];
   onNotesChange: (notes: VaultNote[]) => void;
+  taskDetailsStore: TaskDetailsStore;
+  onTaskDetailSave: (task: TaskItem, next: TaskDetail) => Promise<void> | void;
+  currentAuthorId: string;
+  agentOptions: AgentOption[];
+  onOpenTaskConversation?: (task: TaskItem) => void;
 }) {
   const [showDetail, setShowDetail] = useState(false);
   const priorityMatch = task.text.match(/\bpriority:(high|medium|low)\b/i)?.[1];
@@ -93,34 +116,12 @@ function TaskCard({
     }
   };
 
-  const handleTaskUpdate = async (
-    updatedTask: TaskItem,
-    updates: { completed?: boolean; assignee?: string | null; due?: string | null; priority?: string | null },
-  ) => {
-    const note = notes.find((n) => getNoteKey(n) === updatedTask.noteKey);
-    if (!note) return;
-    if (!canWriteVaultNote(note)) {
-      alert('This task belongs to Agent or Shared content. Only personal vault tasks can be edited.');
-      return;
-    }
-    const nextContent = updateTaskLine(note.content, updatedTask.line, updates, updatedTask.text);
-    if (nextContent === note.content) {
-      alert('Could not locate the task line to edit. The note may have been edited elsewhere.');
-      return;
-    }
-    try {
-      const updated = await writeNote(note, nextContent);
-      onNotesChange(notes.map((n) => (getNoteKey(n) === getNoteKey(updated) ? updated : n)));
-    } catch (error) {
-      console.error('Failed to save task update:', error);
-      alert('Failed to save task update. The file may be locked or permissions denied.');
-    }
-  };
-
   const handleEditClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowDetail(true);
   };
+
+  const detail = ensureTaskDetail(taskDetailsStore, task.id);
 
   return (
     <>
@@ -168,15 +169,32 @@ function TaskCard({
       {showDetail && (
         <TaskDetailModal
           task={task}
+          detail={detail}
+          agents={agentOptions}
+          authorId={currentAuthorId}
           onClose={() => setShowDetail(false)}
-          onTaskUpdate={handleTaskUpdate}
+          onSave={(next) => onTaskDetailSave(task, next)}
+          onOpenConversation={onOpenTaskConversation}
         />
       )}
     </>
   );
 }
 
-function TaskGroup({ agentName, agentNote, tasks, onSelectNote, onRunAgent, notes, onNotesChange }: TaskGroupProps) {
+function TaskGroup({
+  agentName,
+  agentNote,
+  tasks,
+  onSelectNote,
+  onRunAgent,
+  notes,
+  onNotesChange,
+  taskDetailsStore,
+  onTaskDetailSave,
+  currentAuthorId,
+  agentOptions,
+  onOpenTaskConversation,
+}: TaskGroupProps) {
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
       if (a.completed !== b.completed) return a.completed ? 1 : -1;
@@ -218,6 +236,11 @@ function TaskGroup({ agentName, agentNote, tasks, onSelectNote, onRunAgent, note
               agentNote={agentNote}
               notes={notes}
               onNotesChange={onNotesChange}
+              taskDetailsStore={taskDetailsStore}
+              onTaskDetailSave={onTaskDetailSave}
+              currentAuthorId={currentAuthorId}
+              agentOptions={agentOptions}
+              onOpenTaskConversation={onOpenTaskConversation}
             />
           ))}
       </div>
@@ -225,7 +248,20 @@ function TaskGroup({ agentName, agentNote, tasks, onSelectNote, onRunAgent, note
   );
 }
 
-export function TaskQueue({ notes, onSelectNote, onRunAgent, onNotesChange }: TaskQueueProps) {
+export function TaskQueue({
+  notes,
+  onSelectNote,
+  onRunAgent,
+  onNotesChange: _onNotesChange,
+  taskDetailsStore,
+  onTaskDetailSave,
+  currentAuthorId,
+  onOpenTaskConversation,
+}: TaskQueueProps) {
+  const agentOptions = useMemo<AgentOption[]>(
+    () => agentsFromNotes(notes.filter((note) => note.tags.includes('agent') || note.frontmatter.type === 'agent')),
+    [notes],
+  );
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -415,7 +451,12 @@ export function TaskQueue({ notes, onSelectNote, onRunAgent, onNotesChange }: Ta
                 notes={notes}
                 onSelectNote={onSelectNote}
                 onRunAgent={onRunAgent}
-                onNotesChange={onNotesChange}
+                onNotesChange={_onNotesChange}
+                taskDetailsStore={taskDetailsStore}
+                onTaskDetailSave={onTaskDetailSave}
+                currentAuthorId={currentAuthorId}
+                agentOptions={agentOptions}
+                onOpenTaskConversation={onOpenTaskConversation}
               />
             ))}
           </div>

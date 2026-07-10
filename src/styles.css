@@ -2801,6 +2801,15 @@ pre code.language-excalidraw {
   border-bottom-color: var(--primary);
 }
 
+.note-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.note-tab.dirty .note-tab-title {
+  font-style: italic;
+}
+
 .note-tab-label {
   display: flex;
   align-items: center;
@@ -6277,6 +6286,159 @@ pre code.language-excalidraw {
   font-size: var(--text-xs);
   color: var(--muted);
   word-break: break-all;
+}
+
+.task-detail-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.task-tag-pill.removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-tag-pill.removable button {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.task-tag-pill.removable button:hover {
+  color: var(--text);
+}
+
+.task-detail-label-input {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.task-detail-empty {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.task-detail-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.task-detail-comments {
+  display: grid;
+  gap: var(--space-3);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.task-comment-thread {
+  border-left: 2px solid var(--border-light);
+  padding-left: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-comment-replies {
+  margin-left: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  border-left: 1px dashed var(--border-light);
+  padding-left: var(--space-3);
+}
+
+.task-comment {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.task-comment-meta {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.task-comment-meta time {
+  font-variant-numeric: tabular-nums;
+}
+
+.task-comment-edited {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 10px;
+}
+
+.task-comment-body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--text-sm);
+}
+
+.task-comment-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.task-comment-edit {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-comment-reply-input {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-comment-reply-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.task-detail-error {
+  padding: var(--space-2) var(--space-3);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.ghost-button.small.danger {
+  color: #b91c1c;
+}
+
+.modal-input-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.modal-input-row .modal-input {
+  flex: 1;
+}
+
+.primary-button.small,
+.ghost-button.small {
+  font-size: var(--text-xs);
+  padding: 4px var(--space-2);
+  min-height: 28px;
 }
 
 .task-due-pill {

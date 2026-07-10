@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { FolderOpen, Lock, Sparkles } from 'lucide-react';
+import { FolderOpen, Lock, Sparkles, X } from 'lucide-react';
 import { NoteTabs } from './components/NoteTabs';
 import type {
   ChatAgentBusyState,
@@ -138,6 +138,31 @@ import {
 } from './utils/settings';
 import { setToolPermissionOverride } from './utils/permissions';
 import type { ChatLayout, ChatSettings } from './utils/settings';
+import {
+  buildTabSession,
+  loadTabSession,
+  saveTabSession,
+  pruneMissingTabs,
+  isDraftDirty,
+  type TabSession,
+} from './utils/tabSession';
+import { TaskDetailModal } from './components/TaskDetailModal';
+import type {
+  TaskComment,
+  TaskDetail,
+  TaskDetailsStore,
+  TaskPriority,
+  TaskStatus,
+} from './utils/taskDetails';
+import {
+  defaultTaskDetail,
+  emptyTaskDetailsStore,
+  ensureTaskIdOnLine,
+  loadTaskDetailsStore,
+  mergeTaskDetail,
+  saveTaskDetailsStore,
+} from './utils/taskDetails';
+import { getLocalAuthor } from './utils/userIdentity';
 import './styles.css';
 
 interface MountedVault {
@@ -213,6 +238,48 @@ function ensureMdExtension(path: string): string {
   return /\.md$/i.test(path) ? path : `${path}.md`;
 }
 
+function stripInlineTaskMetadata(line: string): string {
+  return line
+    .replace(/(^|\s)@([\p{L}\p{N}_-]+)/u, '')
+    .replace(/\bdue:\S+/i, '')
+    .replace(/\bpriority:(high|medium|low|critical)\b/i, '')
+    .replace(/\s+/g, ' ')
+    .trimEnd();
+}
+
+function rewriteTaskLineMarkdown(
+  line: string,
+  updates: {
+    completed: boolean;
+    text: string;
+    assignee?: string | null;
+    due?: string | null;
+    priority?: string | null;
+  },
+): string {
+  const match = line.match(/^(\s*-\s+\[)([ xX])(\]\s+)(.+)$/);
+  if (!match) return line;
+  const indent = match[1];
+  const separator = match[3];
+  const clean = stripInlineTaskMetadata(match[4]);
+  const parts: string[] = [updates.text.trim() || clean];
+  if (updates.assignee) {
+    const safe = updates.assignee.replace(/[^\p{L}\p{N}_-]/gu, '').trim();
+    if (safe) parts.push(`@${safe}`);
+  }
+  if (updates.due) {
+    const date = updates.due.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) parts.push(`due:${date}`);
+  }
+  if (updates.priority) {
+    const allowed = ['low', 'medium', 'high', 'critical'] as const;
+    if (allowed.includes(updates.priority as (typeof allowed)[number])) {
+      parts.push(`priority:${updates.priority}`);
+    }
+  }
+  return `${indent}${updates.completed ? 'x' : ' '}${separator}${parts.join(' ')}`.trimEnd();
+}
+
 function deriveTitleFromUri(uri: string): string {
   try {
     if (/^https?:\/\//i.test(uri)) {
@@ -274,6 +341,11 @@ export default function App() {
   const [personalVaults, setPersonalVaults] = useState<MountedVault[]>([]);
   const [sharedVaults, setSharedVaults] = useState<MountedVault[]>([]);
   const [agentVaults, setAgentVaults] = useState<MountedVault[]>([]);
+  const [tabSessionLoaded, setTabSessionLoaded] = useState(false);
+  const [pendingDirtyClose, setPendingDirtyClose] = useState<string | null>(null);
+  const [taskDetailsStore, setTaskDetailsStore] = useState<TaskDetailsStore>(() =>
+    emptyTaskDetailsStore(),
+  );
   const APP_VERSION = '0.1.0';
   const [savedVaults, setSavedVaults] = useState<SavedVault[]>([]);
   const starterVaults = useMemo<StarterVaultTemplate[]>(() => getStarterVaultTemplates(), []);
@@ -286,16 +358,8 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
   const [dirty, setDirty] = useState(false);
-  const [openTabs, setOpenTabs] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('openTabs');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [draftsMap, setDraftsMap] = useState<Record<string, string>>({});
-  const [dirtyTabsMap, setDirtyTabsMap] = useState<Record<string, boolean>>({});
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [noteActionDialog, setNoteActionDialog] = useState<{
     mode: 'create' | 'rename' | 'delete';
@@ -722,7 +786,9 @@ export default function App() {
   const draftRef = useRef(draft);
   const dirtyRef = useRef(dirty);
   const openTabsRef = useRef(openTabs);
+  const draftsMapRef = useRef<Record<string, string>>({});
   const closeTabRef = useRef<(key: string) => void>(() => {});
+  draftsMapRef.current = draftsMap;
   // Keep refs in sync for use in effects
   draftRef.current = draft;
   dirtyRef.current = dirty;
@@ -733,7 +799,6 @@ export default function App() {
     const prev = prevKeyRef.current;
     if (prev !== undefined && prev !== selectedKey) {
       setDraftsMap((current) => ({ ...current, [prev]: draftRef.current }));
-      setDirtyTabsMap((current) => ({ ...current, [prev]: dirtyRef.current }));
     }
 
     // Load draft for the newly selected tab
@@ -742,27 +807,19 @@ export default function App() {
       setDirty(false);
     } else {
       const key = getNoteKey(selectedNote);
-      // Use functional updater to read latest draftsMap
-      setDraftsMap((current) => {
-        const saved = current[key];
-        if (saved !== undefined) {
-          // Need to also read dirtyTabsMap — use another functional setter
-          setDirtyTabsMap((dirtyCurrent) => {
-            setDraft(saved);
-            const isDirty = dirtyCurrent[key] ?? false;
-            setDirty(isDirty);
-            draftRef.current = saved;
-            dirtyRef.current = isDirty;
-            return dirtyCurrent;
-          });
-        } else {
-          setDraft(selectedNote.content);
-          setDirty(false);
-          draftRef.current = selectedNote.content;
-          dirtyRef.current = false;
-        }
-        return current;
-      });
+      const saved = draftsMapRef.current[key];
+      if (saved !== undefined) {
+        setDraft(saved);
+        const noteDirty = isDraftDirty(saved, selectedNote);
+        setDirty(noteDirty);
+        draftRef.current = saved;
+        dirtyRef.current = noteDirty;
+      } else {
+        setDraft(selectedNote.content);
+        setDirty(false);
+        draftRef.current = selectedNote.content;
+        dirtyRef.current = false;
+      }
     }
 
     prevKeyRef.current = selectedKey;
@@ -900,10 +957,32 @@ export default function App() {
     savePreferences({ editorMode, view });
   }, [editorMode, view]);
 
-  // Persist open tabs to localStorage
+  // Persist tab session to localStorage
   useEffect(() => {
-    localStorage.setItem('openTabs', JSON.stringify(openTabs));
-  }, [openTabs]);
+    if (!tabSessionLoaded) return;
+    const mountedVaults = [
+      ...personalVaults.map((v) => ({ id: v.source.id, role: v.source.role })),
+      ...sharedVaults.map((v) => ({ id: v.source.id, role: v.source.role })),
+      ...agentVaults.map((v) => ({ id: v.source.id, role: v.source.role })),
+    ];
+    const session: TabSession = buildTabSession({
+      order: openTabs,
+      activeKey: selectedKey,
+      drafts: draftsMap,
+      notes,
+      mountedVaults,
+    });
+    saveTabSession(session);
+  }, [
+    openTabs,
+    selectedKey,
+    draftsMap,
+    notes,
+    personalVaults,
+    sharedVaults,
+    agentVaults,
+    tabSessionLoaded,
+  ]);
 
   useEffect(() => {
     if (!chatSettings.open && chatContextNote) {
@@ -927,10 +1006,60 @@ export default function App() {
     };
   }, [notes]);
 
+  const dirtyTabsMap = useMemo(() => {
+    const notesByKey = new Map(notes.map((note) => [getNoteKey(note), note]));
+    const map: Record<string, boolean> = {};
+    for (const [key, draft] of Object.entries(draftsMap)) {
+      const note = notesByKey.get(key);
+      if (isDraftDirty(draft, note)) map[key] = true;
+    }
+    return map;
+  }, [notes, draftsMap]);
+
   useEffect(() => {
     const tasks = notes.flatMap((note) => note.tasks);
     setTaskConversationMeta(pruneTaskConversationMeta(tasks));
   }, [notes]);
+
+  // Restore tab session after notes load and at least one vault is mounted.
+  useEffect(() => {
+    if (tabSessionLoaded) return;
+    if (notes.length === 0) return;
+    const mounted = [
+      ...personalVaults,
+      ...sharedVaults,
+      ...agentVaults,
+    ];
+    if (mounted.length === 0) return;
+    const session = loadTabSession();
+    const mountedIds = new Set(mounted.map((v) => v.source.id));
+    if (session && session.vaultIds.some((id) => mountedIds.has(id))) {
+      const { order, drafts } = pruneMissingTabs(
+        session.order,
+        session.drafts,
+        notes,
+      );
+      if (order.length > 0) {
+        setOpenTabs(order);
+        setDraftsMap(drafts);
+        const validActive = session.activeKey && order.includes(session.activeKey)
+          ? session.activeKey
+          : undefined;
+        if (validActive) {
+          setSelectedKey(validActive);
+        } else {
+          setSelectedKey(order[0]);
+        }
+      }
+    }
+    setTabSessionLoaded(true);
+  }, [
+    notes,
+    personalVaults,
+    sharedVaults,
+    agentVaults,
+    tabSessionLoaded,
+  ]);
 
   const allTasks = useMemo(() => notes.flatMap((note) => note.tasks), [notes]);
 
@@ -1203,7 +1332,6 @@ export default function App() {
       setSelectedKey(undefined);
       setOpenTabs([]);
       setDraftsMap({});
-      setDirtyTabsMap({});
       setDraft('');
       setDirty(false);
       setChatContextNote(null);
@@ -1522,7 +1650,6 @@ export default function App() {
       // Save current draft for the current tab before switching
       if (selectedKey && selectedKey !== key) {
         setDraftsMap((prev) => ({ ...prev, [selectedKey]: draftRef.current }));
-        setDirtyTabsMap((prev) => ({ ...prev, [selectedKey]: dirtyRef.current }));
       }
       // Add to open tabs if not already present
       setOpenTabs((prev) => (prev.includes(key) ? prev : [...prev, key]));
@@ -1532,20 +1659,15 @@ export default function App() {
     [selectedKey, notes, openNoteInDefaultApp],
   );
 
-  const handleCloseTab = useCallback(
+  const performCloseTab = useCallback(
     (closeKey: string) => {
       // Find index before removal using the ref for latest value
       const currentTabs = openTabsRef.current;
       const closeIdx = currentTabs.indexOf(closeKey);
       if (closeIdx === -1) return;
 
-      // Clean up stored draft/dirty for the closed tab
+      // Clean up stored draft for the closed tab
       setDraftsMap((prev) => {
-        const next = { ...prev };
-        delete next[closeKey];
-        return next;
-      });
-      setDirtyTabsMap((prev) => {
         const next = { ...prev };
         delete next[closeKey];
         return next;
@@ -1577,8 +1699,32 @@ export default function App() {
     },
     [selectedKey],
   );
+
+  const handleCloseTab = useCallback(
+    (closeKey: string) => {
+      const note = notes.find((n) => getNoteKey(n) === closeKey);
+      const draft = draftsMapRef.current[closeKey];
+      if (note && isDraftDirty(draft, note)) {
+        setPendingDirtyClose(closeKey);
+        return;
+      }
+      performCloseTab(closeKey);
+    },
+    [notes, performCloseTab],
+  );
   // Sync ref for use in keyboard shortcuts (declared earlier in component)
   closeTabRef.current = handleCloseTab;
+
+  const confirmDirtyClose = useCallback(() => {
+    if (pendingDirtyClose) {
+      performCloseTab(pendingDirtyClose);
+      setPendingDirtyClose(null);
+    }
+  }, [pendingDirtyClose, performCloseTab]);
+
+  const cancelDirtyClose = useCallback(() => {
+    setPendingDirtyClose(null);
+  }, []);
 
   const saveSelectedNote = useCallback(async () => {
     if (!selectedNote || !dirty) return;
@@ -1600,13 +1746,25 @@ export default function App() {
       setNotes((current) =>
         current.map((note) => (getNoteKey(note) === getNoteKey(saved) ? saved : note)),
       );
+      // After a successful save, the draft equals the saved content, so
+      // remove the in-memory override. Dirty state is derived.
+      if (selectedKey) {
+        setDraftsMap((prev) => {
+          if (!(selectedKey in prev)) return prev;
+          const next = { ...prev };
+          delete next[selectedKey];
+          return next;
+        });
+      }
       setDirty(false);
+      draftRef.current = saved.content;
+      dirtyRef.current = false;
       setStatus(`Saved ${saved.title}.`);
     } catch (error) {
       console.error(error);
       setStatus('Save failed. Check browser permissions for the selected folder.');
     }
-  }, [selectedNote, dirty, draft, ensureWritePermission]);
+  }, [selectedNote, selectedKey, dirty, draft, ensureWritePermission]);
 
   const createNewNote = useCallback(
     async (folderPath = '') => {
@@ -2886,6 +3044,53 @@ imported: ${new Date().toISOString()}
     [selectNote],
   );
 
+  const handleTaskDetailSave = useCallback(
+    async (
+      task: TaskItem,
+      next: TaskDetail,
+    ): Promise<void> => {
+      const note = notes.find((n) => getNoteKey(n) === task.noteKey);
+      if (!note) {
+        throw new Error('Could not locate the note for this task.');
+      }
+      if (!canWriteVaultNote(note)) {
+        throw new Error('This task belongs to Agent or Shared content. Only personal vault tasks can be edited.');
+      }
+      const nextCompleted = next.status === 'done';
+      const lines = note.content.split('\n');
+      const lineIndex = task.line - 1;
+      if (lineIndex < 0 || lineIndex >= lines.length) {
+        throw new Error('Could not locate the task line to edit. The note may have been edited elsewhere.');
+      }
+      const original = lines[lineIndex];
+      if (!original.match(/^\s*-\s+\[([ xX])\]/)) {
+        throw new Error('Could not locate the task line to edit. The note may have been edited elsewhere.');
+      }
+      const ensureWriteOk = await ensureWritePermission(note.vaultId);
+      if (!ensureWriteOk) {
+        throw new Error('Write permission required to save tasks.');
+      }
+      const withId = ensureTaskIdOnLine(original, next.taskId);
+      const finalLine = rewriteTaskLineMarkdown(withId, {
+        completed: nextCompleted,
+        assignee: next.assigneeName ?? null,
+        due: next.dueAt ?? null,
+        priority: next.priority ?? null,
+        text: next.title || task.text,
+      });
+      lines[lineIndex] = finalLine;
+      const nextContent = lines.join('\n');
+      const savedNote = await writeNote(note, nextContent);
+      setNotes((current) =>
+        current.map((existing) =>
+          getNoteKey(existing) === getNoteKey(savedNote) ? savedNote : existing,
+        ),
+      );
+      setTaskDetailsStore((current) => mergeTaskDetail(current, next));
+    },
+    [notes, ensureWritePermission],
+  );
+
   const confirmDeleteNote = useCallback(async () => {
     const targetNote = noteActionTarget ?? selectedNote;
     if (!targetNote || !canWriteVaultNote(targetNote)) return;
@@ -2912,11 +3117,6 @@ imported: ${new Date().toISOString()}
       // Remove from tabs and clean up draft
       setOpenTabs((prev) => prev.filter((k) => k !== deletedKey));
       setDraftsMap((prev) => {
-        const next = { ...prev };
-        delete next[deletedKey];
-        return next;
-      });
-      setDirtyTabsMap((prev) => {
         const next = { ...prev };
         delete next[deletedKey];
         return next;
@@ -2990,14 +3190,13 @@ imported: ${new Date().toISOString()}
 
   const updateDraft = (value: string) => {
     setDraft(value);
-    const isDirty = value !== selectedNote?.content;
+    const isDirty = selectedNote ? value !== selectedNote.content : value.length > 0;
     setDirty(isDirty);
     // Sync refs immediately for tab-switch save
     draftRef.current = value;
     dirtyRef.current = isDirty;
-    // Update the per-tab dirty state in the map
+    // Update the per-tab draft. Dirty state is derived from draft vs. saved note.
     if (selectedKey) {
-      setDirtyTabsMap((prev) => ({ ...prev, [selectedKey]: isDirty }));
       setDraftsMap((prev) => ({ ...prev, [selectedKey]: value }));
     }
     if (selectedNote) {
@@ -3076,6 +3275,9 @@ imported: ${new Date().toISOString()}
           onPingAgent={handlePingAgent}
           onOpenTaskConversation={handleOpenTaskConversation}
           onOpenAgentsView={() => setView('agents')}
+          taskDetailsStore={taskDetailsStore}
+          onTaskDetailSave={handleTaskDetailSave}
+          currentAuthorId={getLocalAuthor().id}
         />
       );
     if (view === 'tags') return <TagsView notes={notes} onSelectNote={selectNote} />;
@@ -3362,6 +3564,42 @@ imported: ${new Date().toISOString()}
             setPendingCreateVaultId(null);
           }}
         />
+      )}
+      {pendingDirtyClose && (
+        <div className="modal-backdrop" onMouseDown={cancelDirtyClose}>
+          <div
+            className="modal-container"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dirty-close-title"
+            onMouseDown={(event) => event.stopPropagation()}
+            style={{ width: 'min(420px, calc(100vw - 32px))' }}
+          >
+            <div className="modal-header">
+              <h3 id="dirty-close-title">Discard unsaved changes?</h3>
+              <button className="modal-close" onClick={cancelDirtyClose} aria-label="Close dialog">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ margin: 0 }}>
+                This tab has unsaved edits. Closing it will discard those changes.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="ghost-button" onClick={cancelDirtyClose}>
+                Keep editing
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={confirmDirtyClose}
+              >
+                Discard & close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {personalPickerOpen && personalVaults.length > 1 && (
         <div className="palette-backdrop visible" onMouseDown={() => setPersonalPickerOpen(null)}>

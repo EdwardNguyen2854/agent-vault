@@ -4,30 +4,36 @@ import type {
   ToolExecutionContext,
 } from '../../types';
 import { cleanString } from './validation';
+import {
+  MAX_VISION_BYTES,
+  bytesToDataUrl,
+  getImageExtension,
+  validateImagePath,
+} from './image';
 
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
-
-const ALLOWED_IMAGE_EXTENSIONS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'webp',
-  'gif',
-  'svg',
-  'bmp',
-  'ico',
-]);
-
-function getExtension(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
+export interface VaultImageReadResult {
+  path: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  extension: string;
+  /**
+   * Vision-safe base64 data URL for callers that need to embed the image
+   * inline. This is redacted in chat transcripts.
+   */
+  dataUrl?: string;
+  /**
+   * Set when the file exists but exceeds the per-image vision budget.
+   * The metadata is returned but no `dataUrl` is included.
+   */
+  visionUnavailable?: boolean;
 }
 
 export const vaultReadImage: InternalToolHandler = {
   toolId: 'vault.read_image',
   toolName: 'Read Image',
   description:
-    'Read an image file from the vault by its relative path. Returns the image as a data URL.',
+    'Read an image file from the vault by its relative path. Returns the image metadata and a vision-safe data URL when supported. Larger images return metadata only.',
   parameters: {
     type: 'object',
     properties: {
@@ -36,22 +42,28 @@ export const vaultReadImage: InternalToolHandler = {
         description:
           'Relative path to the image file from the vault root (e.g. assets/diagram.png)',
       },
+      inline: {
+        type: 'boolean',
+        description:
+          'Whether to include a vision-safe data URL in the result (default: true). Set false for metadata only.',
+      },
     },
     required: ['path'],
   },
   handler: async (input, ctx): Promise<ToolInvocationResult> => {
-    const imagePath = cleanString(input.path);
-    if (!imagePath) return { success: false, error: 'path is required', durationMs: 0 };
-
-    if (imagePath.includes('..')) {
-      return { success: false, error: 'Path traversal is not allowed', durationMs: 0 };
+    const pathValidation = validateImagePath(cleanString(input.path));
+    if (!pathValidation.ok || !pathValidation.normalized) {
+      return { success: false, error: pathValidation.error ?? 'Invalid path.', durationMs: 0 };
     }
+    const imagePath = pathValidation.normalized;
 
-    const ext = getExtension(imagePath);
-    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+    const inlineRequested = input.inline === false ? false : true;
+
+    const extension = getImageExtension(imagePath);
+    if (!extension) {
       return {
         success: false,
-        error: `Unsupported image extension: .${ext}. Allowed: ${Array.from(ALLOWED_IMAGE_EXTENSIONS).join(', ')}`,
+        error: `Image path must include a supported file extension (.png, .jpg, .jpeg, .webp, .gif).`,
         durationMs: 0,
       };
     }
@@ -66,49 +78,45 @@ export const vaultReadImage: InternalToolHandler = {
     }
 
     try {
-      // Walk directory tree to find the file
       const parts = imagePath.split('/').filter(Boolean);
       const fileName = parts.pop()!;
       let directory = ctx.personalRootHandle;
-
       for (const part of parts) {
         directory = await directory.getDirectoryHandle(part);
       }
-
       const fileHandle = await directory.getFileHandle(fileName);
       const file = await fileHandle.getFile();
+      const mimeType =
+        file.type ||
+        (extension === 'jpg'
+          ? 'image/jpeg'
+          : `image/${extension === 'svg' ? 'svg+xml' : extension}`);
 
-      if (file.size > MAX_IMAGE_SIZE) {
+      const result: VaultImageReadResult = {
+        path: imagePath,
+        name: fileName,
+        mimeType,
+        size: file.size,
+        extension,
+      };
+
+      if (!inlineRequested) {
+        return { success: true, output: result, durationMs: 0 };
+      }
+
+      if (file.size > MAX_VISION_BYTES) {
+        result.visionUnavailable = true;
         return {
-          success: false,
-          error: `Image is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum is ${MAX_IMAGE_SIZE / (1024 * 1024)} MB.`,
+          success: true,
+          output: result,
           durationMs: 0,
         };
       }
 
-      // Read as data URL
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () =>
-          typeof reader.result === 'string'
-            ? resolve(reader.result)
-            : reject(new Error('Could not read image as data URL'));
-        reader.onerror = () =>
-          reject(reader.error ?? new Error('Unknown error reading image'));
-        reader.readAsDataURL(file);
-      });
-
-      return {
-        success: true,
-        output: {
-          data_url: dataUrl,
-          mime_type: file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-          size: file.size,
-          name: fileName,
-          path: imagePath,
-        },
-        durationMs: 0,
-      };
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      result.dataUrl = bytesToDataUrl(bytes, mimeType);
+      return { success: true, output: result, durationMs: 0 };
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotFoundError') {
         return {

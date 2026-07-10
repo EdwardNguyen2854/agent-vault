@@ -8,6 +8,7 @@ const WRITE_TOOL_IDS = new Set([
   'vault.update_note',
   'vault.append_to_note',
   'vault.complete_task',
+  'vault.save_image',
   'memory.append',
 ]);
 

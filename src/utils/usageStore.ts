@@ -778,14 +778,42 @@ export function recordToolCall(params: {
   store.tools.push({
     toolId: params.toolId,
     toolName: params.toolName,
-    input: params.input,
-    output: params.output,
+    input: redactDataUrls(params.input),
+    output: redactDataUrls(params.output),
     error: params.error,
     durationMs: params.durationMs,
     success: !params.error,
     timestamp: Date.now(),
   });
   saveEntityUsage(store);
+}
+
+function redactDataUrls(value: unknown): unknown {
+  if (!value) return value;
+  if (typeof value === 'string') {
+    if (value.startsWith('data:') && value.includes(';base64,')) {
+      const match = value.match(/^(data:[^;]+;base64,)(.{0,64})/);
+      const prefix = match?.[1] ?? '';
+      const head = match?.[2] ?? '';
+      return `${prefix}${head}…[truncated ${value.length} chars]`;
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactDataUrls(entry));
+  }
+  if (typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (key === 'dataUrl' || key === 'data_url') {
+        result[key] = '[redacted]';
+      } else {
+        result[key] = redactDataUrls(entry);
+      }
+    }
+    return result;
+  }
+  return value;
 }
 
 export function recordAgentRun(params: {

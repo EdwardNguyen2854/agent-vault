@@ -359,6 +359,13 @@ export interface ChatMessage {
   toolName?: string;
   toolInput?: unknown;
   toolOutput?: unknown;
+  /**
+   * Vision attachments rendered inline alongside the message content.
+   * Currently used to attach images surfaced by tool results (e.g. the
+   * `vault.read_image` tool). When present, providers that support
+   * vision will receive them as multimodal content; others will ignore.
+   */
+  imageAttachments?: ChatAttachment[];
 }
 
 export interface ChatSession {

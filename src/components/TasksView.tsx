@@ -26,7 +26,10 @@ import { updateTaskAssignee, updateTaskCompletion, updateTaskLine } from '../uti
 import { getNoteKey } from '../utils/noteKey';
 import { canWriteVaultNote, writeNote } from '../utils/vault';
 import { loadTasksView, saveTasksView, type TasksViewMode } from '../utils/preferences';
-import { TaskDetailModal } from './TaskDetailModal';
+import { TaskDetailModal, agentsFromNotes, type AgentOption } from './TaskDetailModal';
+import { defaultTaskDetail, ensureTaskDetail, type TaskDetail } from '../utils/taskDetails';
+import { getLocalAuthor } from '../utils/userIdentity';
+import type { TaskDetailsStore } from '../utils/taskDetails';
 
 interface TasksViewProps {
   notes: VaultNote[];
@@ -40,6 +43,9 @@ interface TasksViewProps {
   onPingAgent: (task: TaskItem, agent: VaultNote) => void;
   onOpenTaskConversation: (task: TaskItem) => void;
   onOpenAgentsView: () => void;
+  taskDetailsStore: TaskDetailsStore;
+  onTaskDetailSave: (task: TaskItem, next: TaskDetail) => Promise<void> | void;
+  currentAuthorId: string;
 }
 
 type GroupBy = 'none' | 'note' | 'due' | 'assignee' | 'tag';
@@ -163,6 +169,9 @@ export function TasksView({
   onPingAgent,
   onOpenTaskConversation,
   onOpenAgentsView,
+  taskDetailsStore,
+  onTaskDetailSave,
+  currentAuthorId,
 }: TasksViewProps) {
   const [filter, setFilter] = useState<TaskFilter>('all');
   const [query, setQuery] = useState('');
@@ -293,24 +302,21 @@ export function TasksView({
     }
   };
 
-  const handleTaskDetailUpdate = async (
-    task: TaskItem,
-    updates: { completed?: boolean; assignee?: string | null; due?: string | null; priority?: string | null },
-  ) => {
-    const note = notes.find((n) => getNoteKey(n) === task.noteKey);
+  const handleTaskDetailSave = async (next: TaskDetail) => {
+    if (!editingTask) return;
+    const note = notes.find((n) => getNoteKey(n) === editingTask.noteKey);
     if (!note) return;
     if (!canWriteVaultNote(note)) {
-      alert('This task belongs to Agent or Shared content. Only personal vault tasks can be edited.');
-      return;
+      throw new Error('This task belongs to Agent or Shared content. Only personal vault tasks can be edited.');
     }
-    const nextContent = updateTaskLine(note.content, task.line, updates, task.text);
-    if (nextContent === note.content) {
-      alert('Could not locate the task line to edit. The note may have been edited elsewhere.');
-      return;
-    }
-    await writeTaskMutation(task, nextContent, 'toggle', 'Failed to save task update.');
+    await onTaskDetailSave(editingTask, next);
     setEditingTask(null);
   };
+
+  const agentOptions = useMemo<AgentOption[]>(() => agentsFromNotes(agents), [agents]);
+  const editingDetail = editingTask
+    ? ensureTaskDetail(taskDetailsStore, editingTask.id)
+    : defaultTaskDetail('');
 
   const handleTaskToggle = async (task: TaskItem, currentCompleted: boolean) => {
     const note = notes.find((n) => getNoteKey(n) === task.noteKey);
@@ -848,8 +854,12 @@ export function TasksView({
     {editingTask && (
       <TaskDetailModal
         task={editingTask}
+        detail={editingDetail}
+        agents={agentOptions}
+        authorId={currentAuthorId}
         onClose={() => setEditingTask(null)}
-        onTaskUpdate={handleTaskDetailUpdate}
+        onSave={handleTaskDetailSave}
+        onOpenConversation={onOpenTaskConversation}
       />
     )}
   </>);

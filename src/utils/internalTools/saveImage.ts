@@ -4,50 +4,19 @@ import type {
   ToolExecutionContext,
 } from '../../types';
 import { cleanString } from './validation';
+import {
+  parseImageDataUrl,
+  validateImageExtension,
+  validateImagePath,
+  validateMimeMatchesExtension,
+} from './image';
 
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
-
-const ALLOWED_IMAGE_EXTENSIONS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'webp',
-  'gif',
-  'svg',
-]);
-
-const MIME_TYPE_MAP: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  gif: 'image/gif',
-  svg: 'image/svg+xml',
-};
-
-function getExtension(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
-}
-
-/**
- * Validate a data URL and extract the raw base64 payload and MIME type.
- */
-function parseDataUrl(dataUrl: string): {
+export interface VaultImageSaveResult {
+  markdown: string;
+  path: string;
+  size: number;
   mimeType: string;
-  rawBase64: string;
-  error?: string;
-} {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) {
-    return {
-      mimeType: '',
-      rawBase64: '',
-      error:
-        'Invalid data URL format. Expected data:<mime>;base64,<data>. Use the full data URL including the data: prefix.',
-    };
-  }
-  return { mimeType: match[1], rawBase64: match[2] };
+  name: string;
 }
 
 export const vaultSaveImage: InternalToolHandler = {
@@ -88,57 +57,28 @@ export const vaultSaveImage: InternalToolHandler = {
       return { success: false, error: 'filename is required', durationMs: 0 };
     }
 
-    // Validate filename extension
-    const ext = getExtension(filename);
-    if (!ext) {
-      return {
-        success: false,
-        error:
-          'Filename must include a valid image extension (e.g. .png, .jpg, .webp)',
-        durationMs: 0,
-      };
+    const pathValidation = validateImagePath(folder);
+    if (!pathValidation.ok) {
+      return { success: false, error: pathValidation.error ?? 'Invalid folder.', durationMs: 0 };
     }
-    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+    const folderNormalized = pathValidation.normalized ?? 'assets';
+
+    const extValidation = validateImageExtension(filename);
+    if (!extValidation.ok || !extValidation.extension || !extValidation.mimeType) {
       return {
         success: false,
-        error: `Unsupported image extension: .${ext}. Allowed: ${Array.from(ALLOWED_IMAGE_EXTENSIONS).join(', ')}`,
+        error: extValidation.error ?? 'Invalid image filename.',
         durationMs: 0,
       };
     }
 
-    // Validate folder doesn't escape
-    if (folder.includes('..')) {
-      return {
-        success: false,
-        error: 'Folder path cannot contain path traversal',
-        durationMs: 0,
-      };
+    const parsed = parseImageDataUrl(dataUrl);
+    if (!parsed.ok) {
+      return { success: false, error: parsed.error ?? 'Cannot decode image payload.', durationMs: 0 };
     }
-
-    // Parse the data URL
-    const parsed = parseDataUrl(dataUrl);
-    if (parsed.error) {
-      return { success: false, error: parsed.error, durationMs: 0 };
-    }
-
-    // Validate size (approximate: base64 is ~4/3 of binary size)
-    const approximateSize = Math.ceil((parsed.rawBase64.length * 3) / 4);
-    if (approximateSize > MAX_IMAGE_SIZE) {
-      return {
-        success: false,
-        error: `Image data is too large (approximately ${(approximateSize / (1024 * 1024)).toFixed(1)} MB). Maximum is ${MAX_IMAGE_SIZE / (1024 * 1024)} MB.`,
-        durationMs: 0,
-      };
-    }
-
-    // Check MIME type matches extension
-    const expectedMime = MIME_TYPE_MAP[ext];
-    if (expectedMime && parsed.mimeType !== expectedMime) {
-      return {
-        success: false,
-        error: `MIME type "${parsed.mimeType}" does not match extension ".${ext}". Expected "${expectedMime}".`,
-        durationMs: 0,
-      };
+    const mimeCheck = validateMimeMatchesExtension(parsed.mimeType, extValidation.extension);
+    if (!mimeCheck.ok) {
+      return { success: false, error: mimeCheck.error ?? 'MIME mismatch.', durationMs: 0 };
     }
 
     if (!ctx.personalRootHandle) {
@@ -165,60 +105,46 @@ export const vaultSaveImage: InternalToolHandler = {
     }
 
     try {
-      // Create target directory path
-      const folderParts = folder.split('/').filter(Boolean);
+      const folderParts = folderNormalized.split('/').filter(Boolean);
       const filePath = [...folderParts, filename].join('/');
 
-      // Create directory if needed
       let directory = ctx.personalRootHandle;
       for (const part of folderParts) {
         directory = await directory.getDirectoryHandle(part, { create: true });
       }
 
-      // Check if file already exists
       let targetHandle: FileSystemFileHandle;
       let finalPath = filePath;
       try {
         targetHandle = await directory.getFileHandle(filename);
-        // File exists — append timestamp to make unique
         const dotIndex = filename.lastIndexOf('.');
         const baseName = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
-        const newName = `${baseName}_${Date.now()}.${ext}`;
+        const newName = `${baseName}_${Date.now()}.${extValidation.extension}`;
         targetHandle = await directory.getFileHandle(newName, { create: true });
         finalPath = [...folderParts, newName].join('/');
       } catch {
-        // File doesn't exist — create it
         targetHandle = await directory.getFileHandle(filename, { create: true });
       }
 
-      // Convert base64 to binary
-      const binaryStr = atob(parsed.rawBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-
       const writable = await targetHandle.createWritable();
-      await writable.write(bytes);
+      const buffer = new ArrayBuffer(parsed.bytes.byteLength);
+      new Uint8Array(buffer).set(parsed.bytes);
+      await writable.write(new Blob([buffer], { type: parsed.mimeType }));
       await writable.close();
 
       const file = await targetHandle.getFile();
       const fileName = finalPath.split('/').pop() ?? 'image';
 
-      // Build markdown image reference
       const markdown = `![${fileName}](${finalPath})`;
 
-      return {
-        success: true,
-        output: {
-          markdown,
-          path: finalPath,
-          size: file.size,
-          mime_type: parsed.mimeType,
-          name: fileName,
-        },
-        durationMs: 0,
+      const result: VaultImageSaveResult = {
+        markdown,
+        path: finalPath,
+        size: file.size,
+        mimeType: parsed.mimeType,
+        name: fileName,
       };
+      return { success: true, output: result, durationMs: 0 };
     } catch (err) {
       return {
         success: false,

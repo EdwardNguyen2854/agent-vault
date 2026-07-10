@@ -149,6 +149,24 @@ function parseToolArguments(
   }
 }
 
+function redactToolOutput(output: unknown): string {
+  if (output === undefined || output === null) return 'null';
+  if (typeof output !== 'object') return JSON.stringify(output);
+  const visited = new WeakSet<object>();
+  const safe = JSON.parse(JSON.stringify(output, (_key, value) => {
+    if (typeof value === 'string' && value.startsWith('data:') && value.includes(';base64,')) {
+      const mime = value.slice(5, value.indexOf(';'));
+      return `${mime} base64 (${value.length - (value.indexOf(',') + 1)} chars redacted)`;
+    }
+    if (value && typeof value === 'object') {
+      if (visited.has(value)) return '[Circular]';
+      visited.add(value);
+    }
+    return value;
+  }));
+  return JSON.stringify(safe, null, 2);
+}
+
 function agentAllowsTool(agent: Agent | null | undefined, tool: Tool): boolean {
   if (!agent?.tools?.length) return true;
   const allowed = new Set(agent.tools.map((t) => t.toLowerCase()));
@@ -565,7 +583,7 @@ async function executeToolCall(
   };
 
   const outputContent = toolResult.success
-    ? JSON.stringify(toolResult.output, null, 2)
+    ? redactToolOutput(toolResult.output)
     : `Error: ${toolResult.error ?? 'Unknown error'}`;
 
   return { record, toolResult, outputContent };
@@ -807,7 +825,7 @@ export async function runAgentChat(
           });
 
           // Add tool result message
-          loopMessages.push({
+          const toolMessage: ChatMessage = {
             role: 'tool',
             content: outputContent,
             toolCallId: toolCall.id,
@@ -815,7 +833,36 @@ export async function runAgentChat(
             toolInput: record.input,
             toolOutput: record.output ?? record.error,
             timestamp: Date.now(),
-          });
+          };
+
+          if (
+            tool.id === 'vault.read_image' &&
+            toolResult.success &&
+            toolResult.output &&
+            typeof toolResult.output === 'object'
+          ) {
+            const output = toolResult.output as {
+              dataUrl?: string;
+              mimeType?: string;
+              name?: string;
+              path?: string;
+              visionUnavailable?: boolean;
+            };
+            if (output.dataUrl && output.mimeType && output.name) {
+              toolMessage.imageAttachments = [
+                {
+                  id: `tool-image-${toolCall.id}`,
+                  kind: 'image',
+                  name: output.name,
+                  mimeType: output.mimeType,
+                  size: 0,
+                  dataUrl: output.dataUrl,
+                },
+              ];
+            }
+          }
+
+          loopMessages.push(toolMessage);
         }
 
         if (signal?.aborted) {

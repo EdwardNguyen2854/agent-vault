@@ -507,10 +507,11 @@ function serializeToolAwareMessages(messages: ChatMessage[]): Array<Record<strin
 }
 
 function serializeChatContent(message: ChatMessage): SerializedChatContent {
-  const imageAttachments = (message.attachments ?? []).filter(
-    (attachment) => attachment.kind === 'image',
-  );
-  if (message.role !== 'user' || imageAttachments.length === 0) {
+  const imageAttachments = [
+    ...(message.attachments ?? []).filter((attachment) => attachment.kind === 'image'),
+    ...(message.imageAttachments ?? []).filter((attachment) => attachment.kind === 'image'),
+  ];
+  if (imageAttachments.length === 0) {
     return message.content;
   }
 
