@@ -4,6 +4,24 @@ type: agent
 role: Knowledge Curator
 status: active
 tags: [knowledge-management, agent]
+tools:
+  - vault.read_note
+  - vault.search
+  - vault.list_tasks
+  - vault.create_task
+  - vault.update_note
+  - vault.append_to_note
+  - vault.complete_task
+  - memory.append
+  - note.create
+  - vault.list_notes
+  - vault.get_metadata
+  - memory.list
+  - vault.read_image
+  - vault.save_image
+  - vault.list_folders
+  - vault.create_folder
+  - vault.delete_folder
 ---
 
 # Obra

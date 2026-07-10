@@ -507,6 +507,119 @@ describe('runAgentChat (with tools)', () => {
     expect(result.status).toBe('iteration-limited');
   });
 
+  it('should pass tool schemas to the model adapter when useTools is true', async () => {
+    const adapter = createFakeAdapter({ content: 'ok', finishReason: 'stop' });
+    const chatSpy = vi.spyOn(adapter, 'chat');
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Hi', timestamp: Date.now() }],
+        prompt: 'Hi',
+        notes: [],
+        modelAdapter: adapter,
+      },
+      true,
+    );
+
+    expect(chatSpy).toHaveBeenCalled();
+    const callArgs = chatSpy.mock.calls[0][0];
+    const tools = callArgs.tools ?? [];
+    expect(Array.isArray(tools)).toBe(true);
+    expect(tools.length).toBeGreaterThan(0);
+    const ids = tools.map((t) => t.function.name);
+    expect(ids).toContain('vault.create_folder');
+    expect(ids).toContain('note.create');
+    expect(tools.every((t) => t.type === 'function')).toBe(true);
+  });
+
+  it('should omit tool schemas when useTools is false', async () => {
+    const adapter = createFakeAdapter({ content: 'ok' });
+    const chatSpy = vi.spyOn(adapter, 'chat');
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Hi', timestamp: Date.now() }],
+        prompt: 'Hi',
+        notes: [],
+        modelAdapter: adapter,
+      },
+      false,
+    );
+
+    const callArgs = chatSpy.mock.calls[0][0];
+    expect(callArgs.tools).toBeUndefined();
+  });
+
+  it('should filter model tool list by agent allowed tools', async () => {
+    const adapter = createFakeAdapter({ content: 'ok', finishReason: 'stop' });
+    const chatSpy = vi.spyOn(adapter, 'chat');
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Hi', timestamp: Date.now() }],
+        prompt: 'Hi',
+        notes: [],
+        modelAdapter: adapter,
+        agent: {
+          id: 'obra',
+          name: 'Obra',
+          role: 'Knowledge Curator',
+          status: 'active',
+          skills: [],
+          tools: ['vault.read_note'],
+          memory: [],
+          permissions: { tool_mode: 'ask', write_mode: 'ask' },
+        },
+      },
+      true,
+    );
+
+    const callArgs = chatSpy.mock.calls[0][0];
+    const ids = (callArgs.tools ?? []).map((t) => t.function.name);
+    expect(ids).toEqual(['vault.read_note']);
+  });
+
+  it('should omit tools denied by the agent permission gate', async () => {
+    const adapter = createFakeAdapter({ content: 'ok', finishReason: 'stop' });
+    const chatSpy = vi.spyOn(adapter, 'chat');
+
+    await runAgentChat(
+      {
+        baseUrl: '/test',
+        modelName: 'test-model',
+        streaming: false,
+        messages: [{ role: 'user', content: 'Hi', timestamp: Date.now() }],
+        prompt: 'Hi',
+        notes: [],
+        modelAdapter: adapter,
+        agent: {
+          id: 'read-only-agent',
+          name: 'Read-only agent',
+          role: 'Reader',
+          status: 'active',
+          skills: [],
+          tools: [],
+          memory: [],
+          permissions: { tool_mode: 'read-only', write_mode: 'disabled' },
+        },
+      },
+      true,
+    );
+
+    const ids = (chatSpy.mock.calls[0][0].tools ?? []).map((tool) => tool.function.name);
+    expect(ids).toContain('vault.read_note');
+    expect(ids).not.toContain('vault.create_folder');
+  });
+
   it('should handle cancellation during tool loop', async () => {
     const adapter = createFakeAdapter({
       content: 'Using tool...',

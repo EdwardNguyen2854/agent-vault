@@ -49,10 +49,12 @@ import { type ApprovalDecision } from './approvalAdapter';
 // ============================================================================
 
 export interface AgentExecutionOptions {
-  /** LM Studio configuration */
+  /** Model configuration */
   baseUrl: string;
   modelName: string;
   streaming: boolean;
+  /** API key for providers that require auth (e.g. MiniMax) */
+  apiKey?: string;
 
   /** Agent context */
   agent?: Agent;
@@ -152,6 +154,32 @@ function agentAllowsTool(agent: Agent | null | undefined, tool: Tool): boolean {
   const allowed = new Set(agent.tools.map((t) => t.toLowerCase()));
   if (allowed.has(tool.id.toLowerCase())) return true;
   return allowed.has(tool.name.toLowerCase());
+}
+
+function isToolExecutable(tool: Tool): boolean {
+  if (tool.status !== 'active') return false;
+  if (tool.permission === 'disabled') return false;
+  return true;
+}
+
+function isToolAdvertisable(
+  tool: Tool,
+  agent: Agent | null | undefined,
+  ctx: ToolExecutionContext,
+): boolean {
+  if (!isToolExecutable(tool) || !agentAllowsTool(agent, tool)) return false;
+  return evaluateToolCall(tool, agent, ctx).decision !== 'deny';
+}
+
+function toOpenAITools(tools: Tool[]): OpenAITool[] {
+  return tools.map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.id,
+      description: tool.description ?? '',
+      parameters: tool.inputSchema ?? { type: 'object', properties: {} },
+    },
+  }));
 }
 
 function agentAllowReason(agent: Agent | null | undefined, tool: Tool): string {
@@ -566,6 +594,7 @@ export async function runAgentChat(
     baseUrl,
     modelName,
     streaming,
+    apiKey,
     agent,
     messages,
     prompt,
@@ -623,6 +652,9 @@ export async function runAgentChat(
     if (useTools) {
       // Tool-aware execution loop
       const allTools = getAllTools(notes);
+      const modelTools = toOpenAITools(
+        allTools.filter((tool) => isToolAdvertisable(tool, agent, ctx)),
+      );
       let loopMessages = [...providerMessages];
 
       while (iterations < maxIterations) {
@@ -639,7 +671,9 @@ export async function runAgentChat(
             baseUrl,
             model: modelName,
             messages: loopMessages,
+            tools: modelTools,
             streaming: false, // Tool loops use non-streaming
+            apiKey,
             signal,
           });
         } catch (err) {
@@ -809,6 +843,7 @@ export async function runAgentChat(
         model: modelName,
         messages: providerMessages,
         streaming,
+        apiKey,
         signal,
         onChunk: (chunk) => {
           lastContent += chunk;
@@ -873,6 +908,7 @@ export interface SimpleChatOptions {
   baseUrl: string;
   modelName: string;
   streaming: boolean;
+  apiKey?: string;
   messages: ChatMessage[];
   signal?: AbortSignal;
   onChunk?: (content: string) => void;
@@ -885,7 +921,7 @@ export async function runSimpleChat(options: SimpleChatOptions): Promise<{
   reasoning?: string;
   cancelled: boolean;
 }> {
-  const { baseUrl, modelName, streaming, messages, signal, onChunk, onReasoning, modelAdapter = defaultModelAdapter } = options;
+  const { baseUrl, modelName, streaming, apiKey, messages, signal, onChunk, onReasoning, modelAdapter = defaultModelAdapter } = options;
 
   let content = '';
   let reasoning = '';
@@ -896,6 +932,7 @@ export async function runSimpleChat(options: SimpleChatOptions): Promise<{
       model: modelName,
       messages,
       streaming,
+      apiKey,
       signal,
       onChunk: (chunk) => {
         content += chunk;
